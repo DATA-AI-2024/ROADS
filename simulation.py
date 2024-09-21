@@ -55,12 +55,28 @@ class Taxi:
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
 
-    def choose_cluster(self) -> Tuple[float, float]:
-        temp_time_str = temp_time.strftime('%Y%m%d%H%M')
-        temp_time_str = temp_time_str[:-2] + '00'
-        predictions = predict(temp_time_str, True)
-        predictions.sort(key=lambda x: x[1], reverse=True)
-        return clusters[predictions[0][0]][0], clusters[predictions[0][0]][1]
+    def choose_cluster(self, alg_num:str) -> Tuple[float, float]:
+        match alg_num:
+            case "Cluster Probability":
+                temp_time_str = temp_time.strftime('%Y%m%d%H%M')
+                temp_time_str = temp_time_str[:-2] + '00'
+                predictions = predict(temp_time_str, True)
+                predictions.sort(key=lambda x: x[1], reverse=True)
+                best_cluster = clusters[predictions[0][0]]
+            case "Cluster + Distance":
+                temp_time_str = temp_time.strftime('%Y%m%d%H%M')
+                temp_time_str = temp_time_str[:-2] + '00'
+                predictions = predict(temp_time_str, True)
+                predictions.sort(key=lambda x: x[1], reverse=True)
+                distances = [(i,math.sqrt((cluster[0] - self.x_axis)**2 + (cluster[1] - self.y_axis)**2)) for i, cluster in enumerate(clusters)]
+                distances.sort(key=lambda x: x[1])
+                scores = [0] * len(clusters)
+                for i in range(len(clusters)):
+                    scores[distances[i][0]] += i
+                    scores[predictions[i][0]] += i
+                best_cluster = clusters[scores.index(min(scores))]
+                
+        return best_cluster[0], best_cluster[1]
 
     def start_move(self, destination: Tuple[float, float], status: str):
         self.status = status
@@ -192,12 +208,14 @@ class Observer:
 
                 elif taxi.status == "to_cluster":
                     taxi.status = "waiting"
+                    taxi.x_velocity = 0
+                    taxi.y_velocity = 0
                     # 클러스터에 도착해도 moving_taxis에 유지, 바로 다른 승객을 받을 수 있도록
                     logging.info(f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.destination[0]}, {taxi.destination[1]}) and is ready for new passengers")
 
         for taxi in self.waiting_taxis[:]:
             taxi.passengerless_time += 1
-            taxi.destination = taxi.choose_cluster()
+            taxi.destination = taxi.choose_cluster("Cluster + Distance")
             taxi.start_move(taxi.destination, "to_cluster")
             self.waiting_taxis.remove(taxi)
             self.moving_taxis.append(taxi)
@@ -265,4 +283,3 @@ if __name__ == "__main__":
         subprocess.run(["streamlit", "run", "visualization.py"])
         time.sleep(3)
         webbrowser.open('http://localhost:8501')
-        
