@@ -24,9 +24,9 @@ test_file = config['SIMULATION']['test_file']
 visualize = bool(config['SIMULATION']['visualize'])
 alg_name = config['SIMULATION']['alg_name']
 
-logging.basicConfig(filename="record.log", level=logging.INFO)
+logging.basicConfig(filename=f"{alg_name}.log", level=logging.INFO)
 
-with open(output, 'w') as f:
+with open(f'{alg_name}_{taxis}_{steps}.csv', 'w') as f:
     f.write("id,time,lon,lat,status\n")
 
 data = pd.read_csv('../test_taxi.csv')
@@ -89,6 +89,7 @@ class Taxi:
         self.x_velocity = 0
         self.y_velocity = 0
         self.passengerless_time = 0
+        self.to_passenger_time = 0
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
 
@@ -105,9 +106,9 @@ class Taxi:
         global_last_updated_time = temp_time
 
         match alg_name:
-            case "Cluster Probability":
+            case "Cluster_Probability":
                 best_cluster = max(clusters, key=lambda c: c.predicted_demand)
-            case "Cluster + Distance":                
+            case "Cluster+Distance":                
                 scores = []
                 for cluster in clusters:
                     distance_score = self.calculate_distance(cluster)
@@ -133,6 +134,8 @@ class Taxi:
     def move(self):
         self.x_axis += self.x_velocity
         self.y_axis += self.y_velocity
+        if self.status == "to_passenger":
+            self.to_passenger_time += 1
 
     def is_at_destination(self) -> bool:
         if self.destination is None:
@@ -311,12 +314,17 @@ def run_simulation(observer: Observer, steps: int):
     passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
     passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
 
+    sum_to_passenger_time = sum([taxi.to_passenger_time for taxi in observer.moving_taxis])
+    sum_to_passenger_time += sum([taxi.to_passenger_time for taxi in observer.waiting_taxis])  
+
     logging.info(f"Sum of passengerless time: {sum_passengerless_time}")
     logging.info(f"Sum of waiting time: {sum_waiting_time}")
+    logging.info(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     logging.info(f"Passengerless rate: {passengerless_rate*100}%")
 
     print(f"Sum of passengerless time: {sum_passengerless_time}")
     print(f"Sum of waiting time: {sum_waiting_time}")
+    print(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     print(f"Passengerless rate: {passengerless_rate*100}%")
 
 if __name__ == "__main__":
