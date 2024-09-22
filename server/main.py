@@ -44,7 +44,12 @@ def get_weather(year, month, day, hour, minute):
     response = requests.get(url)
     raw_data = [i for i in response.text.split("\n")[-3].split(' ')if i!='']
     WS, TEMP, HUMI, RN = raw_data[3], raw_data[11], raw_data[13], raw_data[15]
-    return float(WS), float(TEMP), float(HUMI), float(RN)
+    try:
+        return float(WS), float(TEMP), float(HUMI), float(RN)
+    except Exception as e:
+        print(e)
+        print(raw_data)
+        raise e
 
 
 def predict():
@@ -65,10 +70,9 @@ def predict():
         new_data = pd.DataFrame([[x_axis, y_axis, minute, hour, day, weekday, month, year, WS, TEMP, HUMI, RN, i, holiday]], columns=['x_axis', 'y_axis', 'minute', 'hour', 'day', 'weekday', 'month', 'year', 'WS', 'TEMP', 'HUMI', 'RN', 'cluster', 'holiday'])
         pred = model.predict(new_data[train_columns])
         shap_values = explainer(new_data[train_columns])
-        result.append((i,pred[0].item(), train_columns[shap_values[0].values.argmax()]))
+        result.append((i, x_axis, y_axis, pred[0].item(), train_columns[shap_values[0].values.argmax()]))
 
     return result
-
 
 if __name__ == '__main__':
     values = predict()
