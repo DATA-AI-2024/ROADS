@@ -12,6 +12,7 @@ import logging
 from tqdm import tqdm, trange
 import subprocess
 import webbrowser
+import pdb
 import time
 
 config = configparser.ConfigParser()
@@ -22,6 +23,7 @@ taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
 test_file = config['SIMULATION']['test_file']
 visualize = bool(config['SIMULATION']['visualize'])
+alg_name = config['SIMULATION']['alg_name']
 
 logging.basicConfig(filename="record.log", level=logging.INFO)
 
@@ -40,7 +42,43 @@ with open('models/xgb_model.pkl', 'rb') as f:
 with open('models/explainer.pkl', 'rb') as f:
     explainer = pickle.load(f)
 
-clusters = kmeans.cluster_centers_
+class Cluster:
+    global temp_time, global_last_updated_time
+    def __init__(self, x_axis: float, y_axis: float, name: str):
+        self.x_axis = x_axis
+        self.y_axis = y_axis
+        self.name = name
+        self.predicted_demand = 0.0
+        self.predicted_reason = ""
+        self.nearby_taxis: List['Taxi'] = []
+        self.competition = 0.0
+        self.last_updated_time = None
+
+    def update_prediction(self, time_str: str):
+        predictions = predict(time_str, True)
+        for pred in predictions:
+            if pred[0] == int(self.name):
+                self.predicted_demand = pred[1]
+                break
+        self.predicted_reason = pred[2]
+        self.last_updated_time = temp_time
+        global_last_updated_time = temp_time
+
+    def update_nearby_taxis(self, all_taxis: List['Taxi'], max_distance: float):
+        self.nearby_taxis = [
+            taxi for taxi in all_taxis
+            if self.calculate_distance(taxi) <= max_distance
+            and taxi.status not in ["to_passenger", "to_destination"]
+        ]
+
+    def calculate_distance(self, taxi: 'Taxi') -> float:
+        return math.sqrt((self.x_axis - taxi.x_axis)**2 + (self.y_axis - taxi.y_axis)**2)
+
+    def update_competition(self):
+        if self.predicted_demand > 0 and len(self.nearby_taxis) > 0:
+            self.competition = len(self.nearby_taxis) / self.predicted_demand
+        else:
+            self.competition = 0.0
 
 class Taxi:
     def __init__(self, data: dict):
@@ -55,28 +93,49 @@ class Taxi:
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
 
-    def choose_cluster(self, alg_num:str) -> Tuple[float, float]:
+    def choose_cluster(self, alg_num: str) -> Tuple[float, float]:
+        global global_last_updated_time
+
+        if global_last_updated_time is None or (temp_time - global_last_updated_time).total_seconds() > 60:
+            temp_time_str = temp_time.strftime('%Y%m%d%H%M')
+            temp_time_str = temp_time_str[:-2] + '00'
+            
+            for cluster in clusters:
+                cluster.update_prediction(temp_time_str)
+                cluster.update_nearby_taxis([self] + observer.moving_taxis + observer.waiting_taxis, 0.1)
+                cluster.update_competition()
+            
+            global_last_updated_time = temp_time
+
         match alg_num:
             case "Cluster Probability":
                 temp_time_str = temp_time.strftime('%Y%m%d%H%M')
                 temp_time_str = temp_time_str[:-2] + '00'
-                predictions = predict(temp_time_str, True)
-                predictions.sort(key=lambda x: x[1], reverse=True)
-                best_cluster = clusters[predictions[0][0]]
+                for cluster in clusters:
+                    cluster.update_prediction(temp_time_str)
+                best_cluster = max(clusters, key=lambda c: c.predicted_demand)
             case "Cluster + Distance":
                 temp_time_str = temp_time.strftime('%Y%m%d%H%M')
                 temp_time_str = temp_time_str[:-2] + '00'
-                predictions = predict(temp_time_str, True)
-                predictions.sort(key=lambda x: x[1], reverse=True)
-                distances = [(i,math.sqrt((cluster[0] - self.x_axis)**2 + (cluster[1] - self.y_axis)**2)) for i, cluster in enumerate(clusters)]
-                distances.sort(key=lambda x: x[1])
-                scores = [0] * len(clusters)
-                for i in range(len(clusters)):
-                    scores[distances[i][0]] += i
-                    scores[predictions[i][0]] += i
-                best_cluster = clusters[scores.index(min(scores))]
+                for cluster in clusters:
+                    cluster.update_prediction(temp_time_str)
+                    cluster.update_nearby_taxis([self] + observer.moving_taxis + observer.waiting_taxis, 0.1)  # 0.1 is an example max_distance
+                    cluster.update_competition()
                 
-        return best_cluster[0], best_cluster[1]
+                scores = []
+                for cluster in clusters:
+                    distance_score = self.calculate_distance(cluster)
+                    demand_score = cluster.predicted_demand
+                    competition_score = cluster.competition
+                    total_score = demand_score / (distance_score * competition_score) if competition_score > 0 else demand_score / distance_score
+                    scores.append((cluster, total_score))
+                
+                best_cluster = max(scores, key=lambda x: x[1])[0]
+        
+        return best_cluster.x_axis, best_cluster.y_axis
+
+    def calculate_distance(self, cluster: Cluster) -> float:
+        return math.sqrt((cluster.x_axis - self.x_axis)**2 + (cluster.y_axis - self.y_axis)**2)
 
     def start_move(self, destination: Tuple[float, float], status: str):
         self.status = status
@@ -154,37 +213,49 @@ class Observer:
         temp_time += pd.Timedelta(seconds=1)
 
     def assign_calls(self):
-            for passenger in self.waiting_passengers[:]:
-                available_taxis = [taxi for taxi in self.waiting_taxis + self.moving_taxis 
-                                if taxi.status in ["waiting", "to_cluster"]]
+        for passenger in self.waiting_passengers[:]:
+            available_taxis = [taxi for taxi in self.waiting_taxis + self.moving_taxis 
+                            if taxi.status in ["waiting", "to_cluster"]]
+            
+            if available_taxis:
+                nearest_taxi = min(available_taxis, key=lambda t: self.calculate_distance(t, passenger))
                 
-                if available_taxis:
-                    nearest_taxi = min(available_taxis, key=lambda t: self.calculate_distance(t, passenger))
-                    
-                    if nearest_taxi in self.waiting_taxis:
-                        self.waiting_taxis.remove(nearest_taxi)
-                        self.moving_taxis.append(nearest_taxi)
-                    elif nearest_taxi in self.moving_taxis:
-                        # 이미 moving_taxis에 있으므로 이동만 필요
-                        pass
+                if nearest_taxi in self.waiting_taxis:
+                    self.waiting_taxis.remove(nearest_taxi)
+                    self.moving_taxis.append(nearest_taxi)
+                elif nearest_taxi in self.moving_taxis:
+                    # 이미 moving_taxis에 있으므로 이동만 필요
+                    pass
 
-                    nearest_taxi.start_move((passenger.x_axis, passenger.y_axis), "to_passenger")
-                    nearest_taxi.passenger = passenger
-                    self.waiting_passengers.remove(passenger)
-                    
-                    logging.info(f"{temp_time}: Assigned taxi {nearest_taxi.name} to passenger {nearest_taxi.passenger.name} (status: {nearest_taxi.status}) ")
+                nearest_taxi.start_move((passenger.x_axis, passenger.y_axis), "to_passenger")
+                nearest_taxi.passenger = passenger
+                self.waiting_passengers.remove(passenger)
+                
+                logging.info(f"{temp_time}: Assigned taxi {nearest_taxi.name} to passenger {nearest_taxi.passenger.name} (status: {nearest_taxi.status}) ")
+    
     @staticmethod
     def calculate_distance(taxi: Taxi, passenger: Passenger) -> float:
         return math.sqrt((taxi.x_axis - passenger.x_axis)**2 + (taxi.y_axis - passenger.y_axis)**2)
 
     def update(self):
-        global passenger_list, temp_time
+        global passenger_list, temp_time, global_last_updated_time
         if temp_time.second == 0:
             with open(output, 'a') as f:
                 for taxi in self.moving_taxis:
                     f.write(f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n")
                 for taxi in self.waiting_taxis:
                     f.write(f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n")
+
+        if global_last_updated_time == None:
+            temp_time_str = temp_time.strftime('%Y%m%d%H%M')
+            temp_time_str = temp_time_str[:-2] + '00'
+            for cluster in clusters:
+                cluster.update_prediction(temp_time_str)
+                cluster.update_nearby_taxis(self.moving_taxis + self.waiting_taxis, 0.1)
+                cluster.update_competition()
+                cluster.last_updated_time = temp_time
+            global_last_updated_time = temp_time
+            
 
         for taxi in self.moving_taxis[:]:
             taxi.move()
@@ -243,7 +314,7 @@ class Observer:
 def run_simulation(observer: Observer, steps: int):
     global temp_time
     for _ in tqdm(range(steps), desc="Simulation Progress"):
-            observer.update()
+        observer.update()
 
     sum_passengerless_time = sum([taxi.passengerless_time for taxi in observer.moving_taxis])
     sum_passengerless_time += sum([taxi.passengerless_time for taxi in observer.waiting_taxis])
@@ -251,26 +322,28 @@ def run_simulation(observer: Observer, steps: int):
     sum_waiting_time = sum([passenger.waiting_time for passenger in observer.moving_passengers])
     sum_waiting_time += sum([passenger.waiting_time for passenger in observer.waiting_passengers])
 
+    passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
+    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
+
     logging.info(f"Sum of passengerless time: {sum_passengerless_time}")
     logging.info(f"Sum of waiting time: {sum_waiting_time}")
 
     print(f"Sum of passengerless time: {sum_passengerless_time}")
     print(f"Sum of waiting time: {sum_waiting_time}")
-
-
-test = pd.read_csv(test_file)
-test['datetime']= pd.to_datetime(test['datetime'])
-test['destination'] = test['destination'].apply(lambda x: eval(x))
-
-
-passenger_list = test.to_dict('records')
-for i in range(len(passenger_list)):
-    passenger_list[i]['name'] = f'P{i}'
-passenger_list = deque(passenger_list)
-
-temp_time = test['datetime'].iloc[0]
+    print(f"Passengerless rate: {passengerless_rate}")
 
 if __name__ == "__main__":
+    test = pd.read_csv(test_file)
+    test['datetime']= pd.to_datetime(test['datetime'])
+    test['destination'] = test['destination'].apply(lambda x: eval(x))
+
+    passenger_list = test.to_dict('records')
+    for i in range(len(passenger_list)):
+        passenger_list[i]['name'] = f'P{i}'
+    passenger_list = deque(passenger_list)
+    temp_time = test['datetime'].iloc[0]
+    global_last_updated_time = None
+    clusters = [Cluster(center[0], center[1], str(i)) for i, center in enumerate(kmeans.cluster_centers_)]
     observer = Observer()
     
     # 랜덤하게 택시 생성 - x_axis는 127.3~127.4, y_axis는 36.3~36.4 사이의 값으로 생성
