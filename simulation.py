@@ -12,7 +12,6 @@ import logging
 from tqdm import tqdm, trange
 import subprocess
 import webbrowser
-import pdb
 import time
 
 config = configparser.ConfigParser()
@@ -93,35 +92,22 @@ class Taxi:
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
 
-    def choose_cluster(self, alg_num: str) -> Tuple[float, float]:
-        global global_last_updated_time
-
+    def choose_cluster(self, alg_name: str) -> Tuple[float, float]:
+        global temp_time, global_last_updated_time
         if global_last_updated_time is None or (temp_time - global_last_updated_time).total_seconds() > 60:
             temp_time_str = temp_time.strftime('%Y%m%d%H%M')
             temp_time_str = temp_time_str[:-2] + '00'
-            
+            clusters[0].update_prediction(temp_time_str)
             for cluster in clusters:
-                cluster.update_prediction(temp_time_str)
                 cluster.update_nearby_taxis([self] + observer.moving_taxis + observer.waiting_taxis, 0.1)
                 cluster.update_competition()
             
-            global_last_updated_time = temp_time
+        global_last_updated_time = temp_time
 
-        match alg_num:
+        match alg_name:
             case "Cluster Probability":
-                temp_time_str = temp_time.strftime('%Y%m%d%H%M')
-                temp_time_str = temp_time_str[:-2] + '00'
-                for cluster in clusters:
-                    cluster.update_prediction(temp_time_str)
                 best_cluster = max(clusters, key=lambda c: c.predicted_demand)
-            case "Cluster + Distance":
-                temp_time_str = temp_time.strftime('%Y%m%d%H%M')
-                temp_time_str = temp_time_str[:-2] + '00'
-                for cluster in clusters:
-                    cluster.update_prediction(temp_time_str)
-                    cluster.update_nearby_taxis([self] + observer.moving_taxis + observer.waiting_taxis, 0.1)  # 0.1 is an example max_distance
-                    cluster.update_competition()
-                
+            case "Cluster + Distance":                
                 scores = []
                 for cluster in clusters:
                     distance_score = self.calculate_distance(cluster)
@@ -131,7 +117,7 @@ class Taxi:
                     scores.append((cluster, total_score))
                 
                 best_cluster = max(scores, key=lambda x: x[1])[0]
-        
+
         return best_cluster.x_axis, best_cluster.y_axis
 
     def calculate_distance(self, cluster: Cluster) -> float:
@@ -286,7 +272,7 @@ class Observer:
 
         for taxi in self.waiting_taxis[:]:
             taxi.passengerless_time += 1
-            taxi.destination = taxi.choose_cluster("Cluster + Distance")
+            taxi.destination = taxi.choose_cluster(alg_name)
             taxi.start_move(taxi.destination, "to_cluster")
             self.waiting_taxis.remove(taxi)
             self.moving_taxis.append(taxi)
@@ -323,14 +309,15 @@ def run_simulation(observer: Observer, steps: int):
     sum_waiting_time += sum([passenger.waiting_time for passenger in observer.waiting_passengers])
 
     passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
-    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
+    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
 
     logging.info(f"Sum of passengerless time: {sum_passengerless_time}")
     logging.info(f"Sum of waiting time: {sum_waiting_time}")
+    logging.info(f"Passengerless rate: {passengerless_rate*100}%")
 
     print(f"Sum of passengerless time: {sum_passengerless_time}")
     print(f"Sum of waiting time: {sum_waiting_time}")
-    print(f"Passengerless rate: {passengerless_rate}")
+    print(f"Passengerless rate: {passengerless_rate*100}%")
 
 if __name__ == "__main__":
     test = pd.read_csv(test_file)
