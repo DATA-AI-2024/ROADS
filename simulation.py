@@ -131,6 +131,31 @@ class Taxi:
                     scores.append((cluster, total_score))
                 
                 best_cluster = max(scores, key=lambda x: x[1])[0]
+            case "Inverse_Competition":
+                best_cluster = min(clusters, key=lambda c: c.competition if c.competition > 0 else float('inf'))
+            case "Demand_Competition_Ratio":
+                best_cluster = max(clusters, key=lambda c: c.predicted_demand / c.competition if c.competition > 0 else c.predicted_demand)
+            case "Weighted_Score":
+                w_demand, w_distance, w_competition = 0.5, 0.3, 0.2  # Adjust weights as needed
+                scores = []
+                for cluster in clusters:
+                    demand_score = cluster.predicted_demand / max(c.predicted_demand for c in clusters)
+                    distance_score = 1 - (self.calculate_distance(cluster) / max(self.calculate_distance(c) for c in clusters))
+                    competition_score = 1 - (cluster.competition / max(c.competition for c in clusters) if cluster.competition > 0 else 0)
+                    total_score = w_demand * demand_score + w_distance * distance_score + w_competition * competition_score
+                    scores.append((cluster, total_score))
+                best_cluster = max(scores, key=lambda x: x[1])[0]
+            case "Time_Aware":
+                current_hour = temp_time.hour
+                if 6 <= current_hour < 10 or 16 <= current_hour < 20:  # Rush hours
+                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (c.competition if c.competition>0.0 else float('inf') ** 0.5))
+                else:  # Non-rush hours
+                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (self.calculate_distance(c) * c.competition if c.competition>0.0 else float('inf')))
+            case "Adaptive":
+                if self.passengerless_time > 300:  # If waiting for more than 5 minutes
+                    best_cluster = min(clusters, key=lambda c: c.competition)
+                else:
+                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (self.calculate_distance(c) * c.competition if c.competition>0.0 else float('inf')))
 
         return best_cluster.x_axis, best_cluster.y_axis
 
@@ -340,7 +365,7 @@ def run_simulation(observer: Observer, steps: int):
     print(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     print(f"Passengerless rate: {passengerless_rate*100}%")
 
-    message = f'Algorithm name : {alg_name}\n Taxi numbers: {taxis}\n Step numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%'
+    message = f'Algorithm name : {alg_name}\nTaxi numbers: {taxis}\nStep numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%'
 
     send_chat(webhookURL, message)
 
