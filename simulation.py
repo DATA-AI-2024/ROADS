@@ -12,21 +12,24 @@ import logging
 from tqdm import tqdm, trange
 import subprocess
 import webbrowser
+import json
+import requests
 import time
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-output = config['SIMULATION']['output']
 taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
 test_file = config['SIMULATION']['test_file']
 visualize = bool(config['SIMULATION']['visualize'])
 alg_name = config['SIMULATION']['alg_name']
+save_path = config['SIMULATION']['save_path']
+name = f'{alg_name}_{taxis}_{steps}'
 
-logging.basicConfig(filename=f"{alg_name}.log", level=logging.INFO)
+logging.basicConfig(filename=f"{save_path}/{name}.log", level=logging.INFO)
 
-with open(f'{alg_name}_{taxis}_{steps}.csv', 'w') as f:
+with open(f'{save_path}/{name}.csv', 'w') as f:
     f.write("id,time,lon,lat,status\n")
 
 data = pd.read_csv('../test_taxi.csv')
@@ -40,6 +43,16 @@ with open('models/xgb_model.pkl', 'rb') as f:
 # load the explainer
 with open('models/explainer.pkl', 'rb') as f:
     explainer = pickle.load(f)
+
+webhookURL = 'https://sb1031.tw3.quickconnect.to/direct/webapi/entry.cgi?api=SYNO.Chat.External&method=incoming&version=2&token=%22nX5xYyMkltc8qFEJ65OLgISHBSvxrGSLRzCdZusuB1zKy0PvbFkmCgyCuv36JE5q%22'
+
+
+def send_chat(webhook, message):
+    params = {
+        "payload":json.dumps({"text":message})
+    }
+    response = requests.post(webhook, data=params, verify=False)
+
 
 class Cluster:
     global temp_time, global_last_updated_time
@@ -108,7 +121,7 @@ class Taxi:
         match alg_name:
             case "Cluster_Probability":
                 best_cluster = max(clusters, key=lambda c: c.predicted_demand)
-            case "Cluster+Distance":                
+            case "Cluster_Probability+Distance":                
                 scores = []
                 for cluster in clusters:
                     distance_score = self.calculate_distance(cluster)
@@ -229,7 +242,7 @@ class Observer:
     def update(self):
         global passenger_list, temp_time, global_last_updated_time
         if temp_time.second == 0:
-            with open(output, 'a') as f:
+            with open(f'{save_path}/{name}.csv', 'a') as f:
                 for taxi in self.moving_taxis:
                     f.write(f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n")
                 for taxi in self.waiting_taxis:
@@ -326,6 +339,10 @@ def run_simulation(observer: Observer, steps: int):
     print(f"Sum of waiting time: {sum_waiting_time}")
     print(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     print(f"Passengerless rate: {passengerless_rate*100}%")
+
+    message = f'Algorithm name : {alg_name}\n Taxi numbers: {taxis}\n Step numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%'
+
+    send_chat(webhookURL, message)
 
 if __name__ == "__main__":
     test = pd.read_csv(test_file)

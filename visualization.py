@@ -8,12 +8,18 @@ import configparser
 # Load the config
 config = configparser.ConfigParser()
 config.read('config.ini')
-output = config['SIMULATION']['output']
+taxis = int(config['SIMULATION']['taxis'])
+steps = int(config['SIMULATION']['steps'])
+test_file = config['SIMULATION']['test_file']
+visualize = bool(config['SIMULATION']['visualize'])
+alg_name = config['SIMULATION']['alg_name']
+save_path = config['SIMULATION']['save_path']
+name = f'{alg_name}_{taxis}_{steps}'
 
 # Load the data
 @st.cache_data
 def load_data():
-    df = pd.read_csv(output, parse_dates=['time'])
+    df = pd.read_csv(f'{save_path}/{name}.csv', parse_dates=['time'])
     return df
 
 # Create the map with taxi paths
