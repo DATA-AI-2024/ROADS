@@ -32,7 +32,6 @@ logging.basicConfig(filename=f"{save_path}/{name}.log", level=logging.INFO)
 with open(f'{save_path}/{name}.csv', 'w') as f:
     f.write("id,time,lon,lat,status\n")
 
-data = pd.read_csv('../test_taxi.csv')
 with open('models/kmeans_model.pkl', 'rb') as f:
     kmeans = pickle.load(f)
 
@@ -103,6 +102,7 @@ class Taxi:
         self.y_velocity = 0
         self.passengerless_time = 0
         self.to_passenger_time = 0
+        self.to_destination_time = 0
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
 
@@ -172,8 +172,11 @@ class Taxi:
     def move(self):
         self.x_axis += self.x_velocity
         self.y_axis += self.y_velocity
-        if self.status == "to_passenger":
-            self.to_passenger_time += 1
+        match self.status:
+            case "to_passenger":
+                self.to_passenger_time += 1
+            case "to_destination":
+                self.to_destination_time += 1
 
     def is_at_destination(self) -> bool:
         if self.destination is None:
@@ -353,25 +356,34 @@ def run_simulation(observer: Observer, steps: int):
     passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
 
     sum_to_passenger_time = sum([taxi.to_passenger_time for taxi in observer.moving_taxis])
-    sum_to_passenger_time += sum([taxi.to_passenger_time for taxi in observer.waiting_taxis])  
+    sum_to_passenger_time += sum([taxi.to_passenger_time for taxi in observer.waiting_taxis])
+
+    all_todest_time = np.array(
+        [taxi.to_destination_time for taxi in observer.moving_taxis]
+        + [taxi.to_destination_time for taxi in observer.waiting_taxis]
+    )
+    mean_todest_time = all_todest_time.mean()
+    std_todest_time = all_todest_time.std()
 
     logging.info(f"Sum of passengerless time: {sum_passengerless_time}")
     logging.info(f"Sum of waiting time: {sum_waiting_time}")
     logging.info(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     logging.info(f"Passengerless rate: {passengerless_rate*100}%")
+    logging.info(f"To destination time: {mean_todest_time} (± {std_todest_time})")
 
     print(f"Sum of passengerless time: {sum_passengerless_time}")
     print(f"Sum of waiting time: {sum_waiting_time}")
     print(f"Sum of time heading to passenger: {sum_to_passenger_time}")
     print(f"Passengerless rate: {passengerless_rate*100}%")
+    print(f"To destination time: {mean_todest_time} (±{std_todest_time})")
 
-    message = f'Algorithm name : {alg_name}\nTaxi numbers: {taxis}\nStep numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%'
+    message = f'Algorithm name : {alg_name}\nTaxi numbers: {taxis}\nStep numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%\nTo destination time: {mean_todest_time} (±{std_todest_time})'
 
     send_chat(webhookURL, message)
 
 if __name__ == "__main__":
     test = pd.read_csv(test_file)
-    test['datetime']= pd.to_datetime(test['datetime'])
+    test['datetime'] = pd.to_datetime(test['datetime'])
     test['destination'] = test['destination'].apply(lambda x: eval(x))
 
     passenger_list = test.to_dict('records')
