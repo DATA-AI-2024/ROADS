@@ -66,6 +66,7 @@ class Cluster:
         self.last_updated_time = None
 
     def update_prediction(self, time_str: str):
+        global temp_time, global_last_updated_time
         predictions = predict(time_str, True)
         for pred in predictions:
             if pred[0] == int(self.name):
@@ -118,6 +119,9 @@ class Taxi:
             
         global_last_updated_time = temp_time
 
+        def safe_division(n, d, default=0):
+            return n / d if d != 0 else default
+
         match alg_name:
             case "Cluster_Probability":
                 best_cluster = max(clusters, key=lambda c: c.predicted_demand)
@@ -126,36 +130,39 @@ class Taxi:
                 for cluster in clusters:
                     distance_score = self.calculate_distance(cluster)
                     demand_score = cluster.predicted_demand
-                    competition_score = cluster.competition
-                    total_score = demand_score / (distance_score * competition_score) if competition_score > 0 else demand_score / distance_score
+                    competition_score = max(cluster.competition, 0.1)  # Avoid division by zero
+                    total_score = safe_division(demand_score, distance_score * competition_score, default=0)
                     scores.append((cluster, total_score))
                 
                 best_cluster = max(scores, key=lambda x: x[1])[0]
             case "Inverse_Competition":
-                best_cluster = min(clusters, key=lambda c: c.competition if c.competition > 0 else float('inf'))
+                best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, max(c.competition, 0.1)))
             case "Demand_Competition_Ratio":
-                best_cluster = max(clusters, key=lambda c: c.predicted_demand / c.competition if c.competition > 0 else c.predicted_demand)
+                best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, max(c.competition, 0.1)))
             case "Weighted_Score":
                 w_demand, w_distance, w_competition = 0.5, 0.3, 0.2  # Adjust weights as needed
                 scores = []
+                max_demand = max(c.predicted_demand for c in clusters)
+                max_distance = max(self.calculate_distance(c) for c in clusters)
+                max_competition = max(max(c.competition, 0.1) for c in clusters)
                 for cluster in clusters:
-                    demand_score = cluster.predicted_demand / max(c.predicted_demand for c in clusters)
-                    distance_score = 1 - (self.calculate_distance(cluster) / max(self.calculate_distance(c) for c in clusters))
-                    competition_score = 1 - (cluster.competition / max(c.competition for c in clusters) if cluster.competition > 0 else 0)
+                    demand_score = safe_division(cluster.predicted_demand, max_demand)
+                    distance_score = 1 - safe_division(self.calculate_distance(cluster), max_distance)
+                    competition_score = 1 - safe_division(max(cluster.competition, 0.1), max_competition)
                     total_score = w_demand * demand_score + w_distance * distance_score + w_competition * competition_score
                     scores.append((cluster, total_score))
                 best_cluster = max(scores, key=lambda x: x[1])[0]
             case "Time_Aware":
                 current_hour = temp_time.hour
                 if 6 <= current_hour < 10 or 16 <= current_hour < 20:  # Rush hours
-                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (c.competition if c.competition>0.0 else float('inf') ** 0.5))
+                    best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, max(c.competition, 0.1) ** 0.5))
                 else:  # Non-rush hours
-                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (self.calculate_distance(c) * c.competition if c.competition>0.0 else float('inf')))
+                    best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, self.calculate_distance(c) * max(c.competition, 0.1)))
             case "Adaptive":
                 if self.passengerless_time > 300:  # If waiting for more than 5 minutes
-                    best_cluster = min(clusters, key=lambda c: c.competition)
+                    best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, max(c.competition, 0.1)))
                 else:
-                    best_cluster = max(clusters, key=lambda c: c.predicted_demand / (self.calculate_distance(c) * c.competition if c.competition>0.0 else float('inf')))
+                    best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, self.calculate_distance(c) * max(c.competition, 0.1)))
 
         return best_cluster.x_axis, best_cluster.y_axis
 
