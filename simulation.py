@@ -26,6 +26,9 @@ visualize = bool(config['SIMULATION']['visualize'])
 alg_name = config['SIMULATION']['alg_name']
 save_path = config['SIMULATION']['save_path']
 name = f'{alg_name}_{taxis}_{steps}'
+seed = int(config['SIMULATION']['seed'])
+
+random.seed(seed)
 
 logging.basicConfig(filename=f"{save_path}/{name}.log", level=logging.INFO)
 
@@ -97,7 +100,8 @@ class Taxi:
         self.name = data['name']
         self.x_axis = data['x_axis']
         self.y_axis = data['y_axis']
-        self.destination = None
+        self.to_x_axis = None
+        self.to_y_axis = None
         self.velocity = 0.00004475
         self.x_velocity = 0
         self.y_velocity = 0
@@ -106,6 +110,7 @@ class Taxi:
         self.to_destination_time = 0
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
         self.passenger = None
+        self.earnings = 0
 
     def choose_cluster(self, alg_name: str) -> Tuple[float, float]:
         global temp_time, global_last_updated_time
@@ -169,12 +174,13 @@ class Taxi:
     def calculate_distance(self, cluster: Cluster) -> float:
         return math.sqrt((cluster.x_axis - self.x_axis)**2 + (cluster.y_axis - self.y_axis)**2)
 
-    def start_move(self, destination: Tuple[float, float], status: str):
+    def start_move(self, to_x_axis, to_y_axis, status: str):
         self.status = status
-        self.destination = destination
-        distance = math.sqrt((destination[0] - self.x_axis)**2 + (destination[1] - self.y_axis)**2)
-        self.x_velocity = self.velocity * (destination[0] - self.x_axis) / distance
-        self.y_velocity = self.velocity * (destination[1] - self.y_axis) / distance
+        self.to_x_axis = to_x_axis
+        self.to_y_axis = to_y_axis
+        distance = math.sqrt((self.to_x_axis - self.x_axis)**2 + (self.to_y_axis - self.y_axis)**2)
+        self.x_velocity = self.velocity * (self.to_x_axis - self.x_axis) / distance
+        self.y_velocity = self.velocity * (self.to_y_axis - self.y_axis) / distance
 
     def move(self):
         self.x_axis += self.x_velocity
@@ -186,9 +192,9 @@ class Taxi:
                 self.to_destination_time += 1
 
     def is_at_destination(self) -> bool:
-        if self.destination is None:
+        if self.to_x_axis is None or self.to_y_axis is None:
             return False
-        distance = math.sqrt((self.destination[0] - self.x_axis)**2 + (self.destination[1] - self.y_axis)**2)
+        distance = math.sqrt((self.to_x_axis - self.x_axis)**2 + (self.to_y_axis - self.y_axis)**2)
         return distance < self.velocity
 
 class Passenger:
@@ -196,13 +202,15 @@ class Passenger:
         self.name = data['name']
         self.x_axis = data['x_axis']
         self.y_axis = data['y_axis']
-        self.destination = data['destination']
+        self.to_x_axis = data['to_x_axis']
+        self.to_y_axis = data['to_y_axis']
         self.departure_time = None
         self.arrival_time = None
         self.x_velocity = 0
         self.y_velocity = 0
         self.velocity = 0.00004475
         self.waiting_time = 0
+        self.fee = data['fee']
 
     def start_move(self, x_velocity: float, y_velocity: float):
         self.departure_time = temp_time
@@ -219,9 +227,9 @@ class Passenger:
         return self
 
     def is_at_destination(self) -> bool:
-        if self.destination is None:
+        if self.to_x_axis is None or self.to_y_axis is None:
             return False
-        distance = math.sqrt((self.destination[0] - self.x_axis)**2 + (self.destination[1] - self.y_axis)**2)
+        distance = math.sqrt((self.to_x_axis - self.x_axis)**2 + (self.to_y_axis - self.y_axis)**2)
         return distance < self.velocity
 
 class Observer:
@@ -264,7 +272,7 @@ class Observer:
                     # 이미 moving_taxis에 있으므로 이동만 필요
                     pass
 
-                nearest_taxi.start_move((passenger.x_axis, passenger.y_axis), "to_passenger")
+                nearest_taxi.start_move(passenger.x_axis, passenger.y_axis, "to_passenger")
                 nearest_taxi.passenger = passenger
                 self.waiting_passengers.remove(passenger)
                 
@@ -302,16 +310,18 @@ class Observer:
             if taxi.is_at_destination():
                 
                 if taxi.status == "to_passenger":
-                    taxi.start_move(taxi.passenger.destination, "to_destination")
+                    taxi.start_move(taxi.passenger.to_x_axis, taxi.passenger.to_y_axis,"to_destination")
                     taxi.passenger.start_move(taxi.x_velocity, taxi.y_velocity)
                     self.moving_passengers.append(taxi.passenger)
                     logging.info(f"{temp_time}: Taxi {taxi.name} picked up passenger {taxi.passenger.name}")
 
                 elif taxi.status == "to_destination":
                     taxi.status = "waiting"
+                    taxi.earnings += taxi.passenger.fee
                     taxi.passenger = None
                     self.moving_taxis.remove(taxi)
                     self.waiting_taxis.append(taxi)
+                    
                     logging.info(f"{temp_time}: Taxi {taxi.name} completed a trip and is now waiting, passengerless time: {taxi.passengerless_time}")
 
                 elif taxi.status == "to_cluster":
@@ -319,12 +329,12 @@ class Observer:
                     taxi.x_velocity = 0
                     taxi.y_velocity = 0
                     # 클러스터에 도착해도 moving_taxis에 유지, 바로 다른 승객을 받을 수 있도록
-                    logging.info(f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.destination[0]}, {taxi.destination[1]}) and is ready for new passengers")
+                    logging.info(f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.to_x_axis}, {taxi.to_y_axis}) and is ready for new passengers")
 
         for taxi in self.waiting_taxis[:]:
             taxi.passengerless_time += 1
-            taxi.destination = taxi.choose_cluster(alg_name)
-            taxi.start_move(taxi.destination, "to_cluster")
+            cluster_x, cluster_y = taxi.choose_cluster(alg_name)
+            taxi.start_move(cluster_x, cluster_y, "to_cluster")
             self.waiting_taxis.remove(taxi)
             self.moving_taxis.append(taxi)
             logging.info(f"{temp_time}: Taxi {taxi.name} is heading to cluster")
@@ -353,45 +363,62 @@ def run_simulation(observer: Observer, steps: int):
     for _ in tqdm(range(steps), desc="Simulation Progress"):
         observer.update()
 
-    sum_passengerless_time = sum([taxi.passengerless_time for taxi in observer.moving_taxis])
-    sum_passengerless_time += sum([taxi.passengerless_time for taxi in observer.waiting_taxis])
+    all_passengerless_time = np.array(
+        [taxi.passengerless_time for taxi in observer.moving_taxis]
+        + [taxi.passengerless_time for taxi in observer.waiting_taxis]
+    )
+    mean_passengerless_time = round(all_passengerless_time.mean(), 3)
+    std_passengerless_time = round(all_passengerless_time.std(), 3)
 
-    sum_waiting_time = sum([passenger.waiting_time for passenger in observer.moving_passengers])
-    sum_waiting_time += sum([passenger.waiting_time for passenger in observer.waiting_passengers])
+    all_waiting_time = np.array(
+        [passenger.waiting_time for passenger in observer.moving_passengers]
+        + [passenger.waiting_time for passenger in observer.waiting_passengers]
+    )
+    mean_waiting_time = round(all_waiting_time.mean(), 3)
+    std_waiting_time = round(all_waiting_time.std(), 3)
 
     passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
     passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
-
-    sum_to_passenger_time = sum([taxi.to_passenger_time for taxi in observer.moving_taxis])
-    sum_to_passenger_time += sum([taxi.to_passenger_time for taxi in observer.waiting_taxis])
 
     all_todest_time = np.array(
         [taxi.to_destination_time for taxi in observer.moving_taxis]
         + [taxi.to_destination_time for taxi in observer.waiting_taxis]
     )
-    mean_todest_time = all_todest_time.mean()
-    std_todest_time = all_todest_time.std()
+    mean_todest_time = round(all_todest_time.mean(), 3)
+    std_todest_time = round(all_todest_time.std(), 3)
 
-    logging.info(f"Sum of passengerless time: {sum_passengerless_time}")
-    logging.info(f"Sum of waiting time: {sum_waiting_time}")
-    logging.info(f"Sum of time heading to passenger: {sum_to_passenger_time}")
+    all_earnings = np.array(
+        [taxi.earnings for taxi in observer.moving_taxis]
+        + [taxi.earnings for taxi in observer.waiting_taxis]
+    )
+    mean_earnings = round(all_earnings.mean(), 3)
+    std_earnings = round(all_earnings.std(), 3)
+
+    logging.info(f"Mean passengerless time: {mean_passengerless_time} (± {std_passengerless_time})")
+    logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
+    logging.info(f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})")
+    logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
     logging.info(f"Passengerless rate: {passengerless_rate*100}%")
-    logging.info(f"To destination time: {mean_todest_time} (± {std_todest_time})")
 
-    print(f"Sum of passengerless time: {sum_passengerless_time}")
-    print(f"Sum of waiting time: {sum_waiting_time}")
-    print(f"Sum of time heading to passenger: {sum_to_passenger_time}")
+    print(f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})")
+    print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
+    print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
+    print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
     print(f"Passengerless rate: {passengerless_rate*100}%")
-    print(f"To destination time: {mean_todest_time} (±{std_todest_time})")
 
-    message = f'Algorithm name : {alg_name}\nTaxi numbers: {taxis}\nStep numbers: {steps}\nSum of passengerless time: {sum_passengerless_time}\nSum of waiting time: {sum_waiting_time}\nSum of time heading to passenger: {sum_to_passenger_time}\nPassengerless rate: {passengerless_rate*100}%\nTo destination time: {mean_todest_time} (±{std_todest_time})'
-
+    # message is the same as the print message
+    
+    message =   f"Seed = {seed}\n" + \
+                f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
+                f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
+                f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
+                f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
+                f"Passengerless rate: {passengerless_rate*100}%"
     send_chat(webhookURL, message)
 
 if __name__ == "__main__":
     test = pd.read_csv(test_file)
     test['datetime'] = pd.to_datetime(test['datetime'])
-    test['destination'] = test['destination'].apply(lambda x: eval(x))
 
     passenger_list = test.to_dict('records')
     for i in range(len(passenger_list)):
