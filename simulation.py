@@ -1,21 +1,22 @@
 import configparser
-from collections import abc
-import pandas as pd
-from main import predict
-import pickle
-import math
-from typing import List, Tuple, Optional
-import random
-from collections import deque
-import numpy as np
-import logging
-from tqdm import tqdm, trange
-import subprocess
-import webbrowser
 import json
-import requests
+import logging
+import math
+import pickle
+import random
+import subprocess
 import time
+import webbrowser
+from collections import deque
 from math import round
+from typing import List, Tuple
+
+import numpy as np
+import pandas as pd
+import requests
+from tqdm import tqdm
+
+from main import predict
 
 config = configparser.ConfigParser()
 config.read('config.ini')
