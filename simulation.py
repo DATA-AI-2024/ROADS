@@ -15,6 +15,7 @@ import webbrowser
 import json
 import requests
 import time
+from math import round
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -398,13 +399,13 @@ def run_simulation(observer: Observer, steps: int):
     logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
     logging.info(f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})")
     logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
-    logging.info(f"Passengerless rate: {passengerless_rate*100}%")
+    logging.info(f"Passengerless rate: {round(passengerless_rate*100)}%")
 
     print(f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})")
     print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
     print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
     print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
-    print(f"Passengerless rate: {passengerless_rate*100}%")
+    print(f"Passengerless rate: {round(passengerless_rate*100)}%")
 
     # message is the same as the print message
     
@@ -413,7 +414,7 @@ def run_simulation(observer: Observer, steps: int):
                 f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
                 f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
                 f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
-                f"Passengerless rate: {passengerless_rate*100}%"
+                f"Passengerless rate: {round(passengerless_rate*100)}%"
     send_chat(webhookURL, message)
 
 if __name__ == "__main__":
