@@ -98,10 +98,9 @@ class Cluster:
             self.competition = 0.0
 
 class Taxi:
-    def __init__(self, data: dict):
-        self.name = data['name']
-        self.x_axis = data['x_axis']
-        self.y_axis = data['y_axis']
+    def __init__(self, name: str, x_axis: float, y_axis: float):
+        self.name = name
+        self.x_axis, self.y_axis = x_axis, y_axis
         self.to_x_axis = None
         self.to_y_axis = None
         self.velocity = 0.00004475
@@ -432,8 +431,9 @@ if __name__ == "__main__":
     observer = Observer()
     
     # 랜덤하게 택시 생성 - x_axis는 127.3~127.4, y_axis는 36.3~36.4 사이의 값으로 생성
-    for i in range(taxis):
-        observer.add_taxi(Taxi({'name': f'T{i}', 'x_axis': 127.3 + 0.1 * random.random(), 'y_axis': 36.3 + 0.1 * random.random()}))
+        observer.add_taxi(
+            Taxi(name=f"T{i}", x_axis=(127.3 + 0.1 * random.random()), y_axis=(36.3 + 0.1 * random.random()))
+        )
 
     # Run simulation with steps from command line argument
     run_simulation(observer, steps)
