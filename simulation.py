@@ -23,6 +23,7 @@ config.read('config.ini')
 taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
 test_file = config['SIMULATION']['test_file']
+rest_file = config['SIMULATION']['rest_file']
 visualize = bool(config['SIMULATION']['visualize'])
 alg_name = config['SIMULATION']['alg_name']
 save_path = config['SIMULATION']['save_path']
@@ -95,9 +96,10 @@ class Cluster:
             self.competition = len(self.nearby_taxis) / self.predicted_demand
         else:
             self.competition = 0.0
+        
 
 class Taxi:
-    def __init__(self, name: str, x_axis: float, y_axis: float):
+    def __init__(self, name: str, x_axis: float, y_axis: float, rest_times: pd.DataFrame):
         self.name = name
         self.x_axis, self.y_axis = x_axis, y_axis
         self.to_x_axis = None
@@ -108,9 +110,11 @@ class Taxi:
         self.passengerless_time = 0
         self.to_passenger_time = 0
         self.to_destination_time = 0
-        self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster"
+        self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting"
         self.passenger = None
         self.earnings = 0
+        self.rest_times = rest_times
+        self._rest_time_index = 0
 
     def choose_cluster(self, alg_name: str) -> Tuple[float, float]:
         global temp_time, global_last_updated_time
@@ -197,6 +201,15 @@ class Taxi:
         distance = math.sqrt((self.to_x_axis - self.x_axis)**2 + (self.to_y_axis - self.y_axis)**2)
         return distance < self.velocity
 
+    def is_resting_at(self, timestamp: pd.Timestamp) -> bool:
+        """주어진 시각에 택시가 휴식해야 하는지 반환합니다."""
+        while self._rest_time_index < len(self.rest_times):
+            rest_time = self.rest_times.iloc[self._rest_time_index]
+            if timestamp <= rest_time["end"]:
+                return rest_time["start"] <= timestamp <= rest_time["end"]
+            self._rest_time_index += 1
+        return False
+
 class Passenger:
     def __init__(self, data: dict):
         self.name = data['name']
@@ -236,6 +249,7 @@ class Observer:
     def __init__(self):
         self.moving_taxis: List[Taxi] = []
         self.waiting_taxis: List[Taxi] = []
+        self.resting_taxis: List[Taxi] = []
         self.moving_passengers: List[Passenger] = []
         self.waiting_passengers: List[Passenger] = []
 
@@ -286,9 +300,7 @@ class Observer:
         global passenger_list, temp_time, global_last_updated_time
         if temp_time.second == 0:
             with open(f'{save_path}/{name}.csv', 'a') as f:
-                for taxi in self.moving_taxis:
-                    f.write(f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n")
-                for taxi in self.waiting_taxis:
+                for taxi in self.moving_taxis + self.waiting_taxis + self.resting_taxis:
                     f.write(f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n")
 
         if global_last_updated_time == None:
@@ -300,7 +312,13 @@ class Observer:
                 cluster.update_competition()
                 cluster.last_updated_time = temp_time
             global_last_updated_time = temp_time
-            
+
+        for taxi in self.resting_taxis[:]:
+            if not taxi.is_resting_at(temp_time):
+                taxi.status = "waiting"
+                self.resting_taxis.remove(taxi)
+                self.waiting_taxis.append(taxi)
+                logging.info(f"{temp_time}: Taxi {taxi.name} finished resting and is now waiting")
 
         for taxi in self.moving_taxis[:]:
             taxi.move()
@@ -316,20 +334,30 @@ class Observer:
                     logging.info(f"{temp_time}: Taxi {taxi.name} picked up passenger {taxi.passenger.name}")
 
                 elif taxi.status == "to_destination":
-                    taxi.status = "waiting"
+                    taxi.x_velocity = taxi.y_velocity = 0
                     taxi.earnings += taxi.passenger.fee
                     taxi.passenger = None
-                    self.moving_taxis.remove(taxi)
-                    self.waiting_taxis.append(taxi)
-                    
                     logging.info(f"{temp_time}: Taxi {taxi.name} completed a trip and is now waiting, passengerless time: {taxi.passengerless_time}")
 
+                    self.moving_taxis.remove(taxi)
+                    if taxi.is_resting_at(temp_time):
+                        taxi.status = "resting"
+                        self.resting_taxis.append(taxi)
+                    else:
+                        taxi.status = "waiting"
+                        self.waiting_taxis.append(taxi)
+ 
                 elif taxi.status == "to_cluster":
-                    taxi.status = "waiting"
-                    taxi.x_velocity = 0
-                    taxi.y_velocity = 0
-                    # 클러스터에 도착해도 moving_taxis에 유지, 바로 다른 승객을 받을 수 있도록
+                    taxi.x_velocity = taxi.y_velocity = 0
                     logging.info(f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.to_x_axis}, {taxi.to_y_axis}) and is ready for new passengers")
+
+                    if taxi.is_resting_at(temp_time):
+                        taxi.status = "resting"
+                        self.moving_taxis.remove(taxi)
+                        self.resting_taxis.append(taxi)
+                    else:
+                        taxi.status = "waiting"
+                        # 클러스터에 도착해도 moving_taxis에 유지, 바로 다른 승객을 받을 수 있도록
 
         for taxi in self.waiting_taxis[:]:
             taxi.passengerless_time += 1
@@ -428,10 +456,22 @@ if __name__ == "__main__":
     global_last_updated_time = None
     clusters = [Cluster(center[0], center[1], str(i)) for i, center in enumerate(kmeans.cluster_centers_)]
     observer = Observer()
-    
+
+    all_rest_times = pd.read_csv(rest_file)
+    all_rest_times["start"] = pd.to_datetime(all_rest_times["start"])
+    all_rest_times["end"] = pd.to_datetime(all_rest_times["end"])
+    all_rest_times["duration"] = pd.to_timedelta(all_rest_times["duration"])
+
     # 랜덤하게 택시 생성 - x_axis는 127.3~127.4, y_axis는 36.3~36.4 사이의 값으로 생성
+    taxi_names = all_rest_times['name'].unique()
+    for i, taxi_name in enumerate(taxi_names):
         observer.add_taxi(
-            Taxi(name=f"T{i}", x_axis=(127.3 + 0.1 * random.random()), y_axis=(36.3 + 0.1 * random.random()))
+            Taxi(
+                name=f"T{i}",
+                x_axis=(127.3 + 0.1 * random.random()),
+                y_axis=(36.3 + 0.1 * random.random()),
+                rest_times=all_rest_times[all_rest_times["name"] == taxi_name],
+            ),
         )
 
     # Run simulation with steps from command line argument

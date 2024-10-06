@@ -32,12 +32,14 @@ def create_map(data, time, selected_taxi=None):
         'to_cluster': 'green',
         'to_passenger': 'orange',
         'to_destination': 'red',
+        'resting': 'gray',
     }
     icon_map = {
         'waiting': 'hourglass-half',
         'to_cluster': 'car',
         'to_passenger': 'car',
         'to_destination': 'person',
+        'resting': 'bed',
     }
 
     # Group the data by taxi ID
@@ -137,7 +139,7 @@ def main():
     # Display current time and taxi counts
     st.write(f"Current Time: {selected_time}")
     current_data = df[df['time'] == selected_time]
-    for status in ['waiting', 'to_cluster', 'to_passenger', 'to_destination']:
+    for status in ['waiting', 'to_cluster', 'to_passenger', 'to_destination', 'resting']:
         count = current_data[current_data['status'] == status].shape[0]
         st.write(f"Taxis {status}: {count}")
 
