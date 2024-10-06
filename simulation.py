@@ -8,7 +8,6 @@ import subprocess
 import time
 import webbrowser
 from collections import deque
-from math import round
 from typing import List, Tuple
 
 import numpy as np
@@ -399,13 +398,13 @@ def run_simulation(observer: Observer, steps: int):
     logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
     logging.info(f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})")
     logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
-    logging.info(f"Passengerless rate: {round(passengerless_rate*100)}%")
+    logging.info(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
 
     print(f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})")
     print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
     print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
     print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
-    print(f"Passengerless rate: {round(passengerless_rate*100)}%")
+    print(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
 
     # message is the same as the print message
     
