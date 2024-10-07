@@ -176,6 +176,12 @@ class Taxi:
                     best_cluster = max(clusters, key=lambda c: safe_division(c.predicted_demand, self.calculate_distance(c) * max(c.competition, 0.1)))
 
         return best_cluster.x_axis, best_cluster.y_axis
+    
+
+    def choose_cluster_matrix(self, assignments):
+        # This method now simply returns the assigned cluster from the optimal assignment
+        return assignments[self.name]
+
 
     def calculate_distance(self, cluster: Cluster) -> float:
         return math.sqrt((cluster.x_axis - self.x_axis)**2 + (cluster.y_axis - self.y_axis)**2)
