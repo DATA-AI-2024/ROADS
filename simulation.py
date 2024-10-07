@@ -24,12 +24,15 @@ config.read('config.ini')
 taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
 n_clusters = int(config['SIMULATION']['n_clusters'])
+distance_rate = float(config['SIMULATION']['distance_rate'])
+competition_rate = float(config['SIMULATION']['competition_rate'])
+demand_rate = float(config['SIMULATION']['demand_rate'])
 test_file = config['SIMULATION']['test_file']
 rest_file = config['SIMULATION']['rest_file']
 visualize = bool(config['SIMULATION']['visualize'])
 alg_name = config['SIMULATION']['alg_name']
 save_path = config['SIMULATION']['save_path']
-name = f'{alg_name}_{taxis}_{steps}'
+name = f'{distance_rate}_{competition_rate}_{demand_rate}_{taxis}_{steps}'
 seed = int(config['SIMULATION']['seed'])
 
 random.seed(seed)
@@ -302,9 +305,9 @@ class Observer:
         norm_demand = demand_matrix.matrix / np.max(demand_matrix.matrix)
         
         # Create cost matrix (you can adjust weights here)
-        cost_matrix = (0.4 * norm_distance + 
-                    0.3 * norm_competition + 
-                    0.3 * (1 - norm_demand))  # Invert demand because higher demand is better
+        cost_matrix = (distance_rate * norm_distance + 
+                    competition_rate * norm_competition + 
+                    demand_rate * (1 - norm_demand))  # Invert demand because higher demand is better
         
         # If there are more taxis than clusters, we need to create dummy clusters
         if n_taxis > n_clusters:
