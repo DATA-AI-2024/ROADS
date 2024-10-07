@@ -483,6 +483,7 @@ def run_simulation(observer: Observer, steps: int):
     all_passengerless_time = np.array(
         [taxi.passengerless_time for taxi in observer.moving_taxis]
         + [taxi.passengerless_time for taxi in observer.waiting_taxis]
+        + [taxi.passengerless_time for taxi in observer.resting_taxis]
     )
     mean_passengerless_time = round(all_passengerless_time.mean(), 3)
     std_passengerless_time = round(all_passengerless_time.std(), 3)
@@ -490,16 +491,19 @@ def run_simulation(observer: Observer, steps: int):
     all_waiting_time = np.array(
         [passenger.waiting_time for passenger in observer.moving_passengers]
         + [passenger.waiting_time for passenger in observer.waiting_passengers]
+        + [taxi.passengerless_time for taxi in observer.waiting_taxis]
     )
     mean_waiting_time = round(all_waiting_time.mean(), 3)
     std_waiting_time = round(all_waiting_time.std(), 3)
 
     passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
     passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
+    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.resting_taxis]) / taxis
 
     all_todest_time = np.array(
         [taxi.to_destination_time for taxi in observer.moving_taxis]
         + [taxi.to_destination_time for taxi in observer.waiting_taxis]
+        + [taxi.to_destination_time for taxi in observer.resting_taxis]
     )
     mean_todest_time = round(all_todest_time.mean(), 3)
     std_todest_time = round(all_todest_time.std(), 3)
@@ -507,6 +511,7 @@ def run_simulation(observer: Observer, steps: int):
     all_earnings = np.array(
         [taxi.earnings for taxi in observer.moving_taxis]
         + [taxi.earnings for taxi in observer.waiting_taxis]
+        + [taxi.earnings for taxi in observer.resting_taxis]
     )
     mean_earnings = round(all_earnings.mean(), 3)
     std_earnings = round(all_earnings.std(), 3)
