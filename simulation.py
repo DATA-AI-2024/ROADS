@@ -245,6 +245,12 @@ class Passenger:
         distance = math.sqrt((self.to_x_axis - self.x_axis)**2 + (self.to_y_axis - self.y_axis)**2)
         return distance < self.velocity
 
+
+class Matrix:
+    def __init__(self, matrix: np.ndarray):
+        self.matrix = matrix
+
+
 class Observer:
     def __init__(self):
         self.moving_taxis: List[Taxi] = []
