@@ -9,6 +9,7 @@ import time
 import webbrowser
 from collections import deque
 from typing import List, Tuple
+from scipy.optimize import linear_sum_assignment
 
 import numpy as np
 import pandas as pd
@@ -263,6 +264,47 @@ class Observer:
         self.distance_matrix = None
         self.competition_matrix = None
         self.demand_matrix = None
+
+    
+    # Initialize matrices for optimal assignment
+    def create_assignment_matrices(self, taxis, clusters):
+        n_taxis = len(taxis)
+        n_clusters = len(clusters)
+        
+        distance_matrix = np.zeros((n_taxis, n_clusters))
+        competition_matrix = np.zeros((n_taxis, n_clusters))
+        demand_matrix = np.zeros((n_taxis, n_clusters))
+        
+        for i, taxi in enumerate(taxis):
+            for j, cluster in enumerate(clusters):
+                distance_matrix[i, j] = taxi.calculate_distance(cluster)
+                competition_matrix[i, j] = max(cluster.competition, 0.1)  # Avoid division by zero
+                demand_matrix[i, j] = cluster.predicted_demand
+        
+        return (Matrix(distance_matrix), 
+                Matrix(competition_matrix), 
+                Matrix(demand_matrix))
+    
+    
+    def optimal_cluster_assignment(self, taxis, clusters, distance_matrix, competition_matrix, demand_matrix):
+        # Normalize matrices
+        norm_distance = distance_matrix.matrix / np.max(distance_matrix.matrix)
+        norm_competition = competition_matrix.matrix / np.max(competition_matrix.matrix)
+        norm_demand = demand_matrix.matrix / np.max(demand_matrix.matrix)
+        
+        # Create cost matrix (you can adjust weights here)
+        cost_matrix = (0.4 * norm_distance + 
+                    0.3 * norm_competition + 
+                    0.3 * (1 - norm_demand))  # Invert demand because higher demand is better
+        
+        # Use linear_sum_assignment to find optimal assignment
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        
+        # Create a dictionary mapping taxis to their assigned clusters
+        assignments = {taxis[i].name: clusters[j] for i, j in zip(row_ind, col_ind)}
+        
+        return assignments
+
 
     def add_passenger(self, passenger: Passenger):
         self.waiting_passengers.append(passenger)
