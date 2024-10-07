@@ -22,6 +22,7 @@ config.read('config.ini')
 
 taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
+n_clusters = int(config['SIMULATION']['n_clusters'])
 test_file = config['SIMULATION']['test_file']
 rest_file = config['SIMULATION']['rest_file']
 visualize = bool(config['SIMULATION']['visualize'])
