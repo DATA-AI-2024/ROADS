@@ -293,6 +293,8 @@ class Observer:
     
     
     def optimal_cluster_assignment(self, taxis, clusters, distance_matrix, competition_matrix, demand_matrix):
+        n_taxis = len(taxis)
+        n_clusters = len(clusters)
         # Normalize matrices
         norm_distance = distance_matrix.matrix / np.max(distance_matrix.matrix)
         norm_competition = competition_matrix.matrix / np.max(competition_matrix.matrix)
@@ -303,11 +305,24 @@ class Observer:
                     0.3 * norm_competition + 
                     0.3 * (1 - norm_demand))  # Invert demand because higher demand is better
         
+        # If there are more taxis than clusters, we need to create dummy clusters
+        if n_taxis > n_clusters:
+            dummy_clusters = n_taxis - n_clusters
+            dummy_cost = np.mean(cost_matrix)  # Use mean cost as the cost for dummy clusters
+            cost_matrix = np.pad(cost_matrix, ((0, 0), (0, dummy_clusters)), 
+                                mode='constant', constant_values=dummy_cost)
+        
         # Use linear_sum_assignment to find optimal assignment
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
         
         # Create a dictionary mapping taxis to their assigned clusters
-        assignments = {taxis[i].name: clusters[j] for i, j in zip(row_ind, col_ind)}
+        assignments = {}
+        for i, j in zip(row_ind, col_ind):
+            if j < n_clusters:  # It's a real cluster
+                assignments[taxis[i].name] = clusters[j]
+            else:  # It's a dummy cluster, assign to the best real cluster
+                best_cluster_index = np.argmin(cost_matrix[i, :n_clusters])
+                assignments[taxis[i].name] = clusters[best_cluster_index]
         
         return assignments
 
@@ -420,9 +435,9 @@ class Observer:
 
         self.available_taxis = self.moving_taxis + self.waiting_taxis
 
-        if self.distance_matrix is None:
+        if self.distance_matrix is None or len(self.available_taxis) != self.distance_matrix.matrix.shape[0]:
             self.distance_matrix, self.competition_matrix, self.demand_matrix = (
-            self.create_assignment_matrices(self.available_taxis, clusters)
+                self.create_assignment_matrices(self.available_taxis, clusters)
             )
 
         if self.waiting_taxis:
