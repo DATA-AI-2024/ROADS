@@ -257,8 +257,12 @@ class Observer:
         self.moving_taxis: List[Taxi] = []
         self.waiting_taxis: List[Taxi] = []
         self.resting_taxis: List[Taxi] = []
+        self.available_taxis: List[Taxi] = []
         self.moving_passengers: List[Passenger] = []
         self.waiting_passengers: List[Passenger] = []
+        self.distance_matrix = None
+        self.competition_matrix = None
+        self.demand_matrix = None
 
     def add_passenger(self, passenger: Passenger):
         self.waiting_passengers.append(passenger)
