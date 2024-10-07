@@ -418,9 +418,24 @@ class Observer:
                         taxi.status = "waiting"
                         # 클러스터에 도착해도 moving_taxis에 유지, 바로 다른 승객을 받을 수 있도록
 
+        self.available_taxis = self.moving_taxis + self.waiting_taxis
+
+        if self.distance_matrix is None:
+            self.distance_matrix, self.competition_matrix, self.demand_matrix = (
+            self.create_assignment_matrices(self.available_taxis, clusters)
+            )
+
+        if self.waiting_taxis:
+            assignments = self.optimal_cluster_assignment(self.available_taxis, clusters, 
+                                        self.distance_matrix, self.competition_matrix, self.demand_matrix)
+            
         for taxi in self.waiting_taxis[:]:
             taxi.passengerless_time += 1
-            cluster_x, cluster_y = taxi.choose_cluster(alg_name)
+
+            assigned_cluster = taxi.choose_cluster_matrix(assignments)
+            # cluster_x, cluster_y = taxi.choose_cluster(alg_name)
+            cluster_x, cluster_y = assigned_cluster.x_axis, assigned_cluster.y_axis
+            
             taxi.start_move(cluster_x, cluster_y, "to_cluster")
             self.waiting_taxis.remove(taxi)
             self.moving_taxis.append(taxi)
