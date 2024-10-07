@@ -539,8 +539,8 @@ def run_simulation(observer: Observer, steps: int):
                 f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
                 f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
                 f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
-                f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
-                f"Passengerless rate: {round(passengerless_rate*100, 3)}%" + \
+                f"Mean earnings: {mean_earnings} (±{std_earnings})\n\n" + \
+                f"Passengerless rate: {round(passengerless_rate*100, 3)}%\n" + \
                 f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%\n" + \
                 f"Earnings per time: {round(earning_per_time, 3)} ₩"
 
