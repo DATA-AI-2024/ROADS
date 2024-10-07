@@ -109,6 +109,7 @@ class Taxi:
         self.velocity = 0.00004475
         self.x_velocity = 0
         self.y_velocity = 0
+        self.driving_time = 0
         self.passengerless_time = 0
         self.to_passenger_time = 0
         self.to_destination_time = 0
@@ -395,6 +396,7 @@ class Observer:
                 logging.info(f"{temp_time}: Taxi {taxi.name} finished resting and is now waiting")
 
         for taxi in self.moving_taxis[:]:
+            taxi.driving_time += 1
             taxi.move()
             if taxi.status != "to_destination":
                 taxi.passengerless_time+=1
@@ -445,6 +447,7 @@ class Observer:
                                         self.distance_matrix, self.competition_matrix, self.demand_matrix)
             
         for taxi in self.waiting_taxis[:]:
+            taxi.driving_time += 1
             taxi.passengerless_time += 1
 
             assigned_cluster = taxi.choose_cluster_matrix(assignments)
