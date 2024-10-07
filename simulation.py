@@ -483,62 +483,64 @@ def run_simulation(observer: Observer, steps: int):
     for _ in tqdm(range(steps), desc="Simulation Progress"):
         observer.update()
 
-    all_passengerless_time = np.array(
-        [taxi.passengerless_time for taxi in observer.moving_taxis]
-        + [taxi.passengerless_time for taxi in observer.waiting_taxis]
-        + [taxi.passengerless_time for taxi in observer.resting_taxis]
-    )
+    # exclude taxis which has resting time of more than 75% of the total time
+    final_taxis = [taxi for taxi in observer.moving_taxis if taxi.passengerless_time / taxi.driving_time < 0.75]
+    final_taxis += [taxi for taxi in observer.waiting_taxis if taxi.passengerless_time / taxi.driving_time < 0.75]
+    final_taxis += [taxi for taxi in observer.resting_taxis if taxi.passengerless_time / taxi.driving_time < 0.75]
+
+    all_passengerless_time = np.array([taxi.passengerless_time for taxi in final_taxis])
     mean_passengerless_time = round(all_passengerless_time.mean(), 3)
     std_passengerless_time = round(all_passengerless_time.std(), 3)
 
     all_waiting_time = np.array(
         [passenger.waiting_time for passenger in observer.moving_passengers]
         + [passenger.waiting_time for passenger in observer.waiting_passengers]
-        + [taxi.passengerless_time for taxi in observer.waiting_taxis]
     )
     mean_waiting_time = round(all_waiting_time.mean(), 3)
     std_waiting_time = round(all_waiting_time.std(), 3)
 
-    passengerless_rate = sum([taxi.passengerless_time / steps for taxi in observer.moving_taxis]) / taxis
-    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.waiting_taxis]) / taxis
-    passengerless_rate += sum([taxi.passengerless_time / steps for taxi in observer.resting_taxis]) / taxis
-
-    all_todest_time = np.array(
-        [taxi.to_destination_time for taxi in observer.moving_taxis]
-        + [taxi.to_destination_time for taxi in observer.waiting_taxis]
-        + [taxi.to_destination_time for taxi in observer.resting_taxis]
-    )
+    all_todest_time = np.array([taxi.to_destination_time for taxi in final_taxis])
     mean_todest_time = round(all_todest_time.mean(), 3)
     std_todest_time = round(all_todest_time.std(), 3)
 
-    all_earnings = np.array(
-        [taxi.earnings for taxi in observer.moving_taxis]
-        + [taxi.earnings for taxi in observer.waiting_taxis]
-        + [taxi.earnings for taxi in observer.resting_taxis]
-    )
+    all_earnings = np.array([taxi.earnings for taxi in final_taxis])
     mean_earnings = round(all_earnings.mean(), 3)
     std_earnings = round(all_earnings.std(), 3)
+
+    passengerless_rate = sum([taxi.passengerless_time / taxi.driving_time for taxi in final_taxis]) / len(final_taxis)
+    todest_time_rate = sum([taxi.to_destination_time / taxi.driving_time for taxi in final_taxis]) / len(final_taxis)
+    earning_per_time = sum([taxi.earnings / taxi.driving_time for taxi in final_taxis]) / len(final_taxis)
 
     logging.info(f"Mean passengerless time: {mean_passengerless_time} (± {std_passengerless_time})")
     logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
     logging.info(f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})")
     logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
     logging.info(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
+    logging.info(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
+    logging.info(f"Earnings per time: {round(earning_per_time, 3)} ₩")
 
     print(f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})")
     print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
     print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
     print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
     print(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
+    print(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
+    print(f"Earnings per time: {round(earning_per_time, 3)} ₩")
 
     # message is the same as the print message
     
-    message =   f"Seed = {seed}\n" + \
+    message =   f"Distance rate: {distance_rate}\n" + \
+                f"Competition rate: {competition_rate}\n" + \
+                f"Demand rate: {demand_rate}\n" + \
+                f"Seed = {seed}\n\n" + \
                 f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
                 f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
                 f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
                 f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
-                f"Passengerless rate: {round(passengerless_rate*100)}%"
+                f"Passengerless rate: {round(passengerless_rate*100, 3)}%" + \
+                f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%\n" + \
+                f"Earnings per time: {round(earning_per_time, 3)} ₩"
+
     send_chat(webhookURL, message)
 
 if __name__ == "__main__":
