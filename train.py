@@ -3,6 +3,7 @@ import os
 import pickle
 import warnings
 from typing import List, Tuple, Dict
+import json
 
 import holidays
 import numpy as np
@@ -34,9 +35,10 @@ WEATHER_FILE = config["TRAIN"]["weather_file"]
 WEATHER_API = config["TRAIN"]["weather_api"]
 SAVE_PATH = config["TRAIN"]["save_path"]
 CLUSTERTING_MODEL_PATH = config["TRAIN"]["clustering_model_path"]
+CLUSTER_FEATURES_PATH = config["TRAIN"]["cluster_features_path"]
+REMAINING_CLUSTERS_PATH = config["TRAIN"]["remaining_clusters_path"]
 XGB_MODEL_PATH = config["TRAIN"]["xgb_model_path"]
 EXPLAINER_PATH = config["TRAIN"]["explainer_path"]
-REMAINING_CLUSTERS_PATH = config["TRAIN"]["remaining_clusters_path"]
 DATA_PATH = config["TRAIN"]["data_path"]
 
 # Set random seed
@@ -263,6 +265,50 @@ def add_new_columns(
     return train_data, test_data
 
 
+def calculate_and_save_cluster_features(kmeans, additional_data):
+    cluster_features = {}
+    
+    for i in range(CLUSTER_NUM):
+        cluster_features[i] = {
+            "sum_drinks": 0,
+            "sum_hospitals": 0,
+            "sum_hotels": 0,
+            "sum_drinks_area": 0,
+            "sum_hospital_rooms": 0
+        }
+        
+        drink_dfs = [additional_data["ktv"], additional_data["karaoke"]]
+        hospital_dfs = [additional_data["hospital"], additional_data["small_hospital"]]
+        hotel_dfs = [additional_data["hotel"]]
+        
+        for df in drink_dfs:
+            df["cluster"] = kmeans.predict(df[["x_axis", "y_axis"]])
+            cluster_mask = df["cluster"] == i
+            cluster_features[i]["sum_drinks"] += len(df[cluster_mask])
+            cluster_features[i]["sum_drinks_area"] += df.loc[cluster_mask, "시설총규모"].sum()
+        
+        for df in hospital_dfs:
+            df["cluster"] = kmeans.predict(df[["x_axis", "y_axis"]])
+            cluster_mask = df["cluster"] == i
+            cluster_features[i]["sum_hospitals"] += len(df[cluster_mask])
+            cluster_features[i]["sum_hospital_rooms"] += df.loc[cluster_mask, "병상수"].sum()
+        
+        for df in hotel_dfs:
+            df["cluster"] = kmeans.predict(df[["x_axis", "y_axis"]])
+            cluster_mask = df["cluster"] == i
+            cluster_features[i]["sum_hotels"] += len(df[cluster_mask])
+    
+    #change all values in cluster_features to int
+    for i in range(CLUSTER_NUM):
+        for key in cluster_features[i].keys():
+            cluster_features[i][key] = int(cluster_features[i][key])
+    
+    # Save the cluster features to a JSON file
+    
+    with open(f"{SAVE_PATH}/{CLUSTER_FEATURES_PATH}", "w") as f:
+        json.dump(cluster_features, f)
+
+
 def objective(trial, X, y):
     """Optuna objective function for XGBoost optimization."""
     params = {
@@ -317,7 +363,7 @@ def train_model(train_data: pd.DataFrame) -> xgb.XGBRegressor:
 
 def create_explainer(model: xgb.XGBRegressor, test_data: pd.DataFrame):
     """Create and save SHAP explainer."""
-    explainer = shap.Explainer(model, test_data[TRAIN_COLUMNS])
+    explainer = shap.TreeExplainer(model, feature_perturbation='tree_path_dependent')
 
     with open(f"{SAVE_PATH}/{EXPLAINER_PATH}", "wb") as f:
         pickle.dump(explainer, f)
@@ -343,15 +389,18 @@ def main():
     kmeans, train_data, test_data = perform_clustering(train_data, test_data)
     print("Clustering completed.")
 
+    # Filter clusters
+    train_data, test_data, remaining_cluster = filter_clusters(train_data, test_data)
+
     # Save remaining clusters
     with open(f"{SAVE_PATH}/{REMAINING_CLUSTERS_PATH}", "wb") as f:
         pickle.dump(remaining_cluster, f)
 
-    # Filter clusters
-    train_data, test_data, remaining_cluster = filter_clusters(train_data, test_data)
-
     # Load additional data
     additional_data = load_additional_data()
+    
+    # Calculate and save cluster features
+    calculate_and_save_cluster_features(kmeans, additional_data)
 
     # Add new columns
     train_data, test_data = add_new_columns(
