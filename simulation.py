@@ -7,62 +7,17 @@ import random
 import subprocess
 import time
 import webbrowser
+from argparse import ArgumentParser
 from collections import deque
 from typing import List, Tuple
-from scipy.optimize import linear_sum_assignment
 
 import numpy as np
 import pandas as pd
 import requests
+from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 from main import predict
-
-config = configparser.ConfigParser()
-config.read("config.ini")
-
-taxis = int(config["SIMULATION"]["taxis"])
-steps = int(config["SIMULATION"]["steps"])
-n_clusters = int(config["SIMULATION"]["n_clusters"])
-distance_rate = float(config["SIMULATION"]["distance_rate"])
-competition_rate = float(config["SIMULATION"]["competition_rate"])
-demand_rate = float(config["SIMULATION"]["demand_rate"])
-save_path = config["TRAIN"]["save_path"]
-clustering_model_path = config["TRAIN"]["clustering_model_path"]
-cluster_features_path = config["TRAIN"]["cluster_features_path"]
-remaining_clusters_path = config["TRAIN"]["remaining_clusters_path"]
-xgb_model_path = config["TRAIN"]["xgb_model_path"]
-explainer_path = config["TRAIN"]["explainer_path"]
-test_file = config["SIMULATION"]["test_file"]
-rest_file = config["SIMULATION"]["rest_file"]
-visualize = bool(config["SIMULATION"]["visualize"])
-alg_name = config["SIMULATION"]["alg_name"]
-result_path = config["SIMULATION"]["save_path"]
-name = f"{distance_rate}_{competition_rate}_{demand_rate}_{taxis}_{steps}"
-seed = int(config["GENERAL"]["seed"])
-
-random.seed(seed)
-
-logging.basicConfig(filename=f"{result_path}/{name}.log", level=logging.INFO)
-
-with open(f"{result_path}/{name}.csv", "w") as f:
-    f.write("id,time,lon,lat,status\n")
-
-with open(f"{save_path}/{clustering_model_path}", "rb") as f:
-    kmeans = pickle.load(f)
-
-with open(f"{save_path}/{cluster_features_path}", "r") as f:
-    cluster_features = json.load(f)
-
-with open(f"{save_path}/{remaining_clusters_path}", "rb") as f:
-    remaining_clusters = pickle.load(f)
-
-with open(f"{save_path}/{xgb_model_path}", "rb") as f:
-    model = pickle.load(f)
-
-# load the explainer
-with open(f"{save_path}/{explainer_path}", "rb") as f:
-    explainer = pickle.load(f)
 
 webhookURL = "https://sb1031.tw3.quickconnect.to/direct/webapi/entry.cgi?api=SYNO.Chat.External&method=incoming&version=2&token=%22nX5xYyMkltc8qFEJ65OLgISHBSvxrGSLRzCdZusuB1zKy0PvbFkmCgyCuv36JE5q%22"
 
@@ -474,9 +429,9 @@ class Observer:
         )
 
     def update(self):
-        global passenger_list, temp_time, global_last_updated_time
+        global passenger_list, temp_time, global_last_updated_time, date
         if temp_time.second == 0:
-            with open(f"{result_path}/{name}.csv", "a") as f:
+            with open(f"{result_path}/{date}_{name}.csv", "a") as f:
                 for taxi in self.moving_taxis + self.waiting_taxis + self.resting_taxis:
                     f.write(
                         f"{taxi.name},{temp_time},{taxi.x_axis},{taxi.y_axis},{taxi.status}\n"
@@ -605,7 +560,7 @@ class Observer:
 
 # 시뮬레이션 실행 함수
 def run_simulation(observer: Observer, steps: int):
-    global temp_time
+    global temp_time, weekend, date
     for _ in tqdm(range(steps), desc="Simulation Progress"):
         observer.update()
 
@@ -678,25 +633,113 @@ def run_simulation(observer: Observer, steps: int):
     print(f"Earnings per time: {round(earning_per_time, 3)} ₩")
 
     # message is the same as the print message
-
-    message = (
-        f"Distance rate: {distance_rate}\n"
-        + f"Competition rate: {competition_rate}\n"
-        + f"Demand rate: {demand_rate}\n"
-        + f"Seed = {seed}\n\n"
-        + f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n"
-        + f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n"
-        + f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n"
-        + f"Mean earnings: {mean_earnings} (±{std_earnings})\n\n"
-        + f"Passengerless rate: {round(passengerless_rate*100, 3)}%\n"
-        + f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%\n"
-        + f"Earnings per time: {round(earning_per_time, 3)} ₩"
-    )
-
+    message =   f"Date: {date}\n" + \
+                f"Distance rate: {distance_rate}\n" + \
+                f"Competition rate: {competition_rate}\n" + \
+                f"Demand rate: {demand_rate}\n" + \
+                f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
+                f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
+                f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
+                f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
+                f"Passengerless rate: {round(passengerless_rate*100, 3)}%\n" + \
+                f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%\n" + \
+                f"Earnings per time: {round(earning_per_time, 3)} ₩"
+    
     send_chat(webhookURL, message)
 
+    # write the result to result.csv which already exists
+    # There are 
+    # x_1,x_2,x_3,mean_watiting_time,mean_todest_time,mean_earnings,passengerless_rate,todest_time_rate,earning_per_time 
+    # are already written in the first row
 
+    with open(f"{result_path}/result.csv", "a") as f:
+        f.write(f"{distance_rate},{competition_rate},{demand_rate},{mean_waiting_time},{mean_todest_time},{mean_earnings},{round(passengerless_rate*100, 3)},{round(todest_time_rate*100, 3)},{round(earning_per_time, 3)},{weekend},{date}\n")
+
+        
 if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config",
+        default="config.ini",
+        help="Path to the configuration file (default: config.ini)",
+    )
+    parser.add_argument(
+        "-d",
+        "--distance_rate",
+        type=float,
+        help="Distance rate for the simulation",
+    ),
+    parser.add_argument(
+        "-cr",
+        "--competition_rate",
+        type=float,
+        help="Competition rate for the simulation",
+    ),
+    parser.add_argument(
+        "-dr",
+        "--demand_rate",
+        type=float,
+        help="Demand rate for the simulation",
+    ),
+
+    parser.add_argument(
+        "-w",
+        "--weekend",
+        type=int,
+        help="Weekend flag",
+    )
+
+    args = parser.parse_args()
+
+    distance_rate = args.distance_rate
+    competition_rate = args.competition_rate
+    demand_rate = args.demand_rate
+    weekend = args.weekend
+    date = args.config.split("_")[1].split(".")[0]
+
+    config = configparser.ConfigParser()
+    config.read(args.config)
+    taxis = int(config["SIMULATION"]["taxis"])
+    steps = int(config["SIMULATION"]["steps"])
+    n_clusters = int(config["SIMULATION"]["n_clusters"])
+    save_path = config["TRAIN"]["save_path"]
+    clustering_model_path = config["TRAIN"]["clustering_model_path"]
+    cluster_features_path = config["TRAIN"]["cluster_features_path"]
+    remaining_clusters_path = config["TRAIN"]["remaining_clusters_path"]
+    xgb_model_path = config["TRAIN"]["xgb_model_path"]
+    explainer_path = config["TRAIN"]["explainer_path"]
+    test_file = config["SIMULATION"]["test_file"]
+    rest_file = config["SIMULATION"]["rest_file"]
+    visualize = True if config["SIMULATION"]["visualize"] == "True" else False
+    alg_name = config["SIMULATION"]["alg_name"]
+    result_path = config["SIMULATION"]["save_path"]
+    name = f"{distance_rate}_{competition_rate}_{demand_rate}_{taxis}_{steps}"
+    seed = int(config["GENERAL"]["seed"])
+
+    random.seed(seed)
+
+    logging.basicConfig(filename=f"{result_path}/{date}_{name}.log", level=logging.INFO)
+
+    with open(f"{result_path}/{date}_{name}.csv", "w") as f:
+        f.write("id,time,lon,lat,status\n")
+
+    with open(f"{save_path}/{clustering_model_path}", "rb") as f:
+        kmeans = pickle.load(f)
+
+    with open(f"{save_path}/{cluster_features_path}", "r") as f:    
+        cluster_features = json.load(f)
+
+    with open(f"{save_path}/{remaining_clusters_path}", "rb") as f:
+        remaining_clusters = pickle.load(f)
+
+    with open(f"{save_path}/{xgb_model_path}", "rb") as f:
+        model = pickle.load(f)
+
+    # load the explainer
+    with open(f"{save_path}/{explainer_path}", "rb") as f:
+        explainer = pickle.load(f)
+
     test = pd.read_csv(test_file)
     test["datetime"] = pd.to_datetime(test["datetime"])
 

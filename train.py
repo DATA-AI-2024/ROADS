@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 
 # Read configuration
 config = configparser.ConfigParser()
-config.read("config.ini")
+config.read("configs/config_train.ini")
 
 # Get configuration values
 SEED = int(config["GENERAL"]["seed"])
@@ -115,15 +115,10 @@ def perform_clustering(
     train_data: pd.DataFrame, test_data: pd.DataFrame
 ) -> Tuple[KMeans, pd.DataFrame, pd.DataFrame]:
     """Perform KMeans clustering on the data."""
-    if "kmeans_model.pkl" not in os.listdir():
-        kmeans = KMeans(n_clusters=CLUSTER_NUM, random_state=random_state).fit(
+
+    kmeans = KMeans(n_clusters=CLUSTER_NUM, random_state=random_state).fit(
             train_data[["x_axis", "y_axis"]]
         )
-        with open("kmeans_model.pkl", "wb") as f:
-            pickle.dump(kmeans, f)
-    else:
-        with open("kmeans_model.pkl", "rb") as f:
-            kmeans = pickle.load(f)
 
     train_data["cluster"] = kmeans.predict(train_data[["x_axis", "y_axis"]])
     test_data["cluster"] = kmeans.predict(test_data[["x_axis", "y_axis"]])

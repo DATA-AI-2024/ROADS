@@ -12,7 +12,7 @@ import os
 import json
 
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read('configs/config_train.ini')
 
 SEED = int(config["GENERAL"]["seed"])
 CLUSTER_NUM = int(config["TRAIN"]["cluster_num"])
@@ -67,7 +67,6 @@ def get_weather(year, month, day, hour):
 
 def predict(temp_time = None, test = False):
     if 'kmeans' not in globals():
-        print("Initializing...")
         __init__()
 
     result = []
