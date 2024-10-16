@@ -1,3 +1,4 @@
+python simulation.py -c configs/config_20230730.ini -d 0.0 -cr 0.0 -dr 1.0 -w 1;
 python simulation.py -c configs/config_20230730.ini -d 0.0 -cr 0.1 -dr 0.9 -w 1;
 python simulation.py -c configs/config_20230730.ini -d 0.0 -cr 0.2 -dr 0.8 -w 1;
 python simulation.py -c configs/config_20230730.ini -d 0.0 -cr 0.3 -dr 0.7 -w 1;
