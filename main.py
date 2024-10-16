@@ -112,7 +112,7 @@ def predict(temp_time = None, test = False):
     predictions = model.predict(input_data[TRAIN_COLUMNS])
 
     # Calculate SHAP values
-    shap_values = explainer(input_data[TRAIN_COLUMNS])
+    # shap_values = explainer(input_data[TRAIN_COLUMNS])
 
     # Prepare the result
     for i, pred in enumerate(predictions):
@@ -120,13 +120,14 @@ def predict(temp_time = None, test = False):
         prediction = pred.item()
         
         # Get the absolute SHAP values for this prediction
-        abs_shap_values = np.abs(shap_values.values[i])
+        # abs_shap_values = np.abs(shap_values.values[i])
         
         # Find the index of the feature with the highest absolute SHAP value
-        top_feature_index = np.argmax(abs_shap_values)
+        # top_feature_index = np.argmax(abs_shap_values)
         
         # Get the name of the top feature
-        top_feature = TRAIN_COLUMNS[top_feature_index]
+        # top_feature = TRAIN_COLUMNS[top_feature_index]
+        top_feature = "엘렐레"
         
         result.append((cluster, prediction, top_feature))
 

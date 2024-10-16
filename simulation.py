@@ -43,14 +43,14 @@ class Cluster:
 
     def update_prediction(self, time_str: str):
         global temp_time, global_last_updated_time
+        if global_last_updated_time and global_last_updated_time.hour == temp_time.hour:
+            return
         predictions = predict(time_str, True)
         for pred in predictions:
             if pred[0] == int(self.name):
                 self.predicted_demand = pred[1]
-                break
         self.predicted_reason = pred[2]
         self.last_updated_time = temp_time
-        global_last_updated_time = temp_time
 
     def update_nearby_taxis(self, all_taxis: List["Taxi"], max_distance: float):
         self.nearby_taxis = [
@@ -90,123 +90,40 @@ class Taxi:
         self.status = "waiting"  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting"
         self.passenger = None
         self.earnings = 0
-        self.rest_times = rest_times
+        rest_times = rest_times.sort_values("start")
+        # 휴식 시간을 (start, end) 튜플의 리스트로 변환
+        self.rest_intervals = list(zip(rest_times["start"], rest_times["end"]))
         self._rest_time_index = 0
 
-    def choose_cluster(self, alg_name: str) -> Tuple[float, float]:
+
+    def safe_division(n, d, default=0):
+        return n / d if d != 0 else default
+
+    def choose_cluster_matrix(self, assignments):
+        # This method now simply returns the assigned cluster from the optimal assignment
         global temp_time, global_last_updated_time
-        if (
-            global_last_updated_time is None
-            or (temp_time - global_last_updated_time).total_seconds() > 60
-        ):
-            temp_time_str = temp_time.strftime("%Y%m%d%H%M")
-            temp_time_str = temp_time_str[:-2] + "00"
-            clusters[0].update_prediction(temp_time_str)
+        updated = False
+
+        if temp_time.minute != global_last_updated_time.minute:
             for cluster in clusters:
                 cluster.update_nearby_taxis(
                     [self] + observer.moving_taxis + observer.waiting_taxis, 0.1
                 )
                 cluster.update_competition()
+                updated = True
 
-        global_last_updated_time = temp_time
+        if (global_last_updated_time is None or global_last_updated_time.hour != temp_time.hour):
+            temp_time_str = temp_time.strftime("%Y%m%d%H%M")
+            temp_time_str = temp_time_str[:-2] + "00"
+            for cluster in clusters:
+                cluster.update_prediction(temp_time_str)
+            
+            cluster.last_updated_time = temp_time
+            updated = True
+        
+        if updated:
+            global_last_updated_time = temp_time
 
-        def safe_division(n, d, default=0):
-            return n / d if d != 0 else default
-
-        match alg_name:
-            case "Cluster_Probability":
-                best_cluster = max(clusters, key=lambda c: c.predicted_demand)
-            case "Cluster_Probability+Distance":
-                scores = []
-                for cluster in clusters:
-                    distance_score = self.calculate_distance(cluster)
-                    demand_score = cluster.predicted_demand
-                    competition_score = max(
-                        cluster.competition, 0.1
-                    )  # Avoid division by zero
-                    total_score = safe_division(
-                        demand_score, distance_score * competition_score, default=0
-                    )
-                    scores.append((cluster, total_score))
-
-                best_cluster = max(scores, key=lambda x: x[1])[0]
-            case "Inverse_Competition":
-                best_cluster = max(
-                    clusters,
-                    key=lambda c: safe_division(
-                        c.predicted_demand, max(c.competition, 0.1)
-                    ),
-                )
-            case "Demand_Competition_Ratio":
-                best_cluster = max(
-                    clusters,
-                    key=lambda c: safe_division(
-                        c.predicted_demand, max(c.competition, 0.1)
-                    ),
-                )
-            case "Weighted_Score":
-                w_demand, w_distance, w_competition = (
-                    0.5,
-                    0.3,
-                    0.2,
-                )  # Adjust weights as needed
-                scores = []
-                max_demand = max(c.predicted_demand for c in clusters)
-                max_distance = max(self.calculate_distance(c) for c in clusters)
-                max_competition = max(max(c.competition, 0.1) for c in clusters)
-                for cluster in clusters:
-                    demand_score = safe_division(cluster.predicted_demand, max_demand)
-                    distance_score = 1 - safe_division(
-                        self.calculate_distance(cluster), max_distance
-                    )
-                    competition_score = 1 - safe_division(
-                        max(cluster.competition, 0.1), max_competition
-                    )
-                    total_score = (
-                        w_demand * demand_score
-                        + w_distance * distance_score
-                        + w_competition * competition_score
-                    )
-                    scores.append((cluster, total_score))
-                best_cluster = max(scores, key=lambda x: x[1])[0]
-            case "Time_Aware":
-                current_hour = temp_time.hour
-                if 6 <= current_hour < 10 or 16 <= current_hour < 20:  # Rush hours
-                    best_cluster = max(
-                        clusters,
-                        key=lambda c: safe_division(
-                            c.predicted_demand, max(c.competition, 0.1) ** 0.5
-                        ),
-                    )
-                else:  # Non-rush hours
-                    best_cluster = max(
-                        clusters,
-                        key=lambda c: safe_division(
-                            c.predicted_demand,
-                            self.calculate_distance(c) * max(c.competition, 0.1),
-                        ),
-                    )
-            case "Adaptive":
-                if self.passengerless_time > 300:  # If waiting for more than 5 minutes
-                    best_cluster = max(
-                        clusters,
-                        key=lambda c: safe_division(
-                            c.predicted_demand, max(c.competition, 0.1)
-                        ),
-                    )
-                else:
-                    best_cluster = max(
-                        clusters,
-                        key=lambda c: safe_division(
-                            c.predicted_demand,
-                            self.calculate_distance(c) * max(c.competition, 0.1),
-                        ),
-                    )
-
-        return best_cluster.x_axis, best_cluster.y_axis
-
-    def choose_cluster_matrix(self, assignments):
-        # This method now simply returns the assigned cluster from the optimal assignment
         return assignments[self.name]
 
     def calculate_distance(self, cluster: Cluster) -> float:
@@ -218,7 +135,7 @@ class Taxi:
         self.status = status
         self.to_x_axis = to_x_axis
         self.to_y_axis = to_y_axis
-        distance = math.sqrt(
+        distance = math.sqrt(   
             (self.to_x_axis - self.x_axis) ** 2 + (self.to_y_axis - self.y_axis) ** 2
         )
         self.x_velocity = self.velocity * (self.to_x_axis - self.x_axis) / distance
@@ -243,10 +160,12 @@ class Taxi:
 
     def is_resting_at(self, timestamp: pd.Timestamp) -> bool:
         """주어진 시각에 택시가 휴식해야 하는지 반환합니다."""
-        while self._rest_time_index < len(self.rest_times):
-            rest_time = self.rest_times.iloc[self._rest_time_index]
-            if timestamp <= rest_time["end"]:
-                return rest_time["start"] <= timestamp <= rest_time["end"]
+        while self._rest_time_index < len(self.rest_intervals):
+            start, end = self.rest_intervals[self._rest_time_index]
+            if timestamp < start:
+                return False
+            if start <= timestamp <= end:
+                return True
             self._rest_time_index += 1
         return False
 
@@ -334,6 +253,7 @@ class Observer:
     ):
         n_taxis = len(taxis)
         n_clusters = len(clusters)
+
         # Normalize matrices
         norm_distance = distance_matrix.matrix / np.max(distance_matrix.matrix)
         norm_competition = competition_matrix.matrix / np.max(competition_matrix.matrix)
@@ -417,9 +337,10 @@ class Observer:
                 nearest_taxi.passenger = passenger
                 self.waiting_passengers.remove(passenger)
 
-                logging.info(
-                    f"{temp_time}: Assigned taxi {nearest_taxi.name} to passenger {nearest_taxi.passenger.name} (status: {nearest_taxi.status}) "
-                )
+                if write_log:
+                    logging.info(
+                        f"{temp_time}: Assigned taxi {nearest_taxi.name} to passenger {nearest_taxi.passenger.name} (status: {nearest_taxi.status}) "
+                    )
 
     @staticmethod
     def calculate_distance(taxi: Taxi, passenger: Passenger) -> float:
@@ -430,7 +351,7 @@ class Observer:
 
     def update(self):
         global passenger_list, temp_time, global_last_updated_time, date
-        if temp_time.second == 0:
+        if write_csv and temp_time.second == 0:
             with open(f"{result_path}/{date}_{name}.csv", "a") as f:
                 for taxi in self.moving_taxis + self.waiting_taxis + self.resting_taxis:
                     f.write(
@@ -452,9 +373,10 @@ class Observer:
                 taxi.status = "waiting"
                 self.resting_taxis.remove(taxi)
                 self.waiting_taxis.append(taxi)
-                logging.info(
-                    f"{temp_time}: Taxi {taxi.name} finished resting and is now waiting"
-                )
+                if write_log:
+                    logging.info(
+                        f"{temp_time}: Taxi {taxi.name} finished resting and is now waiting"
+                    )
 
         for taxi in self.moving_taxis[:]:
             taxi.driving_time += 1
@@ -472,17 +394,19 @@ class Observer:
                     )
                     taxi.passenger.start_move(taxi.x_velocity, taxi.y_velocity)
                     self.moving_passengers.append(taxi.passenger)
-                    logging.info(
-                        f"{temp_time}: Taxi {taxi.name} picked up passenger {taxi.passenger.name}"
-                    )
+                    if write_log:
+                        logging.info(
+                            f"{temp_time}: Taxi {taxi.name} picked up passenger {taxi.passenger.name}"
+                        )
 
                 elif taxi.status == "to_destination":
                     taxi.x_velocity = taxi.y_velocity = 0
                     taxi.earnings += taxi.passenger.fee
                     taxi.passenger = None
-                    logging.info(
-                        f"{temp_time}: Taxi {taxi.name} completed a trip and is now waiting, passengerless time: {taxi.passengerless_time}"
-                    )
+                    if write_log:
+                        logging.info(
+                            f"{temp_time}: Taxi {taxi.name} completed a trip and is now waiting, passengerless time: {taxi.passengerless_time}"
+                        )
 
                     self.moving_taxis.remove(taxi)
                     if taxi.is_resting_at(temp_time):
@@ -494,9 +418,10 @@ class Observer:
 
                 elif taxi.status == "to_cluster":
                     taxi.x_velocity = taxi.y_velocity = 0
-                    logging.info(
-                        f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.to_x_axis}, {taxi.to_y_axis}) and is ready for new passengers"
-                    )
+                    if write_log:
+                        logging.info(
+                            f"{temp_time}: Taxi {taxi.name} arrived at cluster ({taxi.to_x_axis}, {taxi.to_y_axis}) and is ready for new passengers"
+                        )
 
                     if taxi.is_resting_at(temp_time):
                         taxi.status = "resting"
@@ -530,13 +455,13 @@ class Observer:
             taxi.passengerless_time += 1
 
             assigned_cluster = taxi.choose_cluster_matrix(assignments)
-            # cluster_x, cluster_y = taxi.choose_cluster(alg_name)
             cluster_x, cluster_y = assigned_cluster.x_axis, assigned_cluster.y_axis
 
             taxi.start_move(cluster_x, cluster_y, "to_cluster")
             self.waiting_taxis.remove(taxi)
             self.moving_taxis.append(taxi)
-            logging.info(f"{temp_time}: Taxi {taxi.name} is heading to cluster")
+            if write_log:
+                logging.info(f"{temp_time}: Taxi {taxi.name} is heading to cluster")
 
         for passnger in self.waiting_passengers[:]:
             passnger.waiting_time += 1
@@ -553,9 +478,10 @@ class Observer:
         self.time_pass()
         # print passenger number of who are waiting
         if temp_time.second == 0 and temp_time.minute % 5 == 0:
-            logging.info(
-                f"{temp_time}: Number of waiting passengers: {len(self.waiting_passengers)}"
-            )
+            if write_log:
+                logging.info(
+                    f"{temp_time}: Number of waiting passengers: {len(self.waiting_passengers)}"
+                )
 
 
 # 시뮬레이션 실행 함수
@@ -610,17 +536,18 @@ def run_simulation(observer: Observer, steps: int):
         [taxi.earnings / taxi.driving_time for taxi in final_taxis]
     ) / len(final_taxis)
 
-    logging.info(
-        f"Mean passengerless time: {mean_passengerless_time} (± {std_passengerless_time})"
-    )
-    logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
-    logging.info(
-        f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})"
-    )
-    logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
-    logging.info(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
-    logging.info(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
-    logging.info(f"Earnings per time: {round(earning_per_time, 3)} ₩")
+    if write_log:
+        logging.info(
+            f"Mean passengerless time: {mean_passengerless_time} (± {std_passengerless_time})"
+        )
+        logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
+        logging.info(
+            f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})"
+        )
+        logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
+        logging.info(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
+        logging.info(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
+        logging.info(f"Earnings per time: {round(earning_per_time, 3)} ₩")
 
     print(
         f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})"
@@ -711,6 +638,8 @@ if __name__ == "__main__":
     explainer_path = config["TRAIN"]["explainer_path"]
     test_file = config["SIMULATION"]["test_file"]
     rest_file = config["SIMULATION"]["rest_file"]
+    write_csv = True if config["SIMULATION"]["write_csv"] == "True" else False
+    write_log = True if config["SIMULATION"]["write_log"] == "True" else False
     visualize = True if config["SIMULATION"]["visualize"] == "True" else False
     alg_name = config["SIMULATION"]["alg_name"]
     result_path = config["SIMULATION"]["save_path"]
@@ -719,10 +648,12 @@ if __name__ == "__main__":
 
     random.seed(seed)
 
-    logging.basicConfig(filename=f"{result_path}/{date}_{name}.log", level=logging.INFO)
+    if write_log:
+        logging.basicConfig(filename=f"{result_path}/{date}_{name}.log", level=logging.INFO)
 
-    with open(f"{result_path}/{date}_{name}.csv", "w") as f:
-        f.write("id,time,lon,lat,status\n")
+    if write_csv:
+        with open(f"{result_path}/{date}_{name}.csv", "w") as f:
+            f.write("id,time,lon,lat,status\n")
 
     with open(f"{save_path}/{clustering_model_path}", "rb") as f:
         kmeans = pickle.load(f)
@@ -760,7 +691,6 @@ if __name__ == "__main__":
     all_rest_times["end"] = pd.to_datetime(all_rest_times["end"])
     all_rest_times["duration"] = pd.to_timedelta(all_rest_times["duration"])
 
-    # 랜덤하게 택시 생성 - x_axis는 127.3~127.4, y_axis는 36.3~36.4 사이의 값으로 생성
     taxi_names = all_rest_times["name"].unique()
     for i, taxi_name in enumerate(taxi_names):
         observer.add_taxi(

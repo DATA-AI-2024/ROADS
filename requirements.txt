@@ -6,3 +6,4 @@ folium == 0.17.0
 streamlit_folium == 0.22.1
 geopy == 2.4.1
 optuna == 4.0.0
+scikit-optimize == 0.10.2
