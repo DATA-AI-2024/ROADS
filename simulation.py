@@ -12,6 +12,7 @@ from collections import deque
 from typing import List, Tuple
 
 import numpy as np
+import optuna
 import pandas as pd
 import requests
 from scipy.optimize import linear_sum_assignment
@@ -251,6 +252,7 @@ class Observer:
     def optimal_cluster_assignment(
         self, taxis, clusters, distance_matrix, competition_matrix, demand_matrix
     ):
+        # global distance_rate, competition_rate, demand_rate
         n_taxis = len(taxis)
         n_clusters = len(clusters)
 
@@ -485,8 +487,35 @@ class Observer:
 
 
 # 시뮬레이션 실행 함수
-def run_simulation(observer: Observer, steps: int):
-    global temp_time, weekend, date
+def run_simulation():
+    global temp_time, global_last_updated_time, clusters, passenger_list, observer
+
+    temp_time = test["datetime"].iloc[0]
+    global_last_updated_time = None
+
+    passenger_list = test.to_dict("records")
+    for i in range(len(passenger_list)):
+        passenger_list[i]["name"] = f"P{i}"
+    passenger_list = deque(passenger_list)
+
+    clusters = [
+        Cluster(kmeans.cluster_centers_[i][0], kmeans.cluster_centers_[i][1], i)
+        for i in remaining_clusters
+    ]
+
+    observer = Observer()
+
+    taxi_names = all_rest_times["name"].unique()
+    for i, taxi_name in enumerate(taxi_names):
+        observer.add_taxi(
+            Taxi(
+                name=f"T{i}",
+                x_axis=(127.3 + 0.1 * random.random()),
+                y_axis=(36.3 + 0.1 * random.random()),
+                rest_times=all_rest_times[all_rest_times["name"] == taxi_name],
+            ),
+        )
+
     for _ in tqdm(range(steps), desc="Simulation Progress"):
         observer.update()
 
@@ -508,80 +537,34 @@ def run_simulation(observer: Observer, steps: int):
     ]
 
     all_passengerless_time = np.array([taxi.passengerless_time for taxi in final_taxis])
-    mean_passengerless_time = round(all_passengerless_time.mean(), 3)
-    std_passengerless_time = round(all_passengerless_time.std(), 3)
-
     all_waiting_time = np.array(
         [passenger.waiting_time for passenger in observer.moving_passengers]
         + [passenger.waiting_time for passenger in observer.waiting_passengers]
     )
-    mean_waiting_time = round(all_waiting_time.mean(), 3)
-    std_waiting_time = round(all_waiting_time.std(), 3)
-
     all_todest_time = np.array([taxi.to_destination_time for taxi in final_taxis])
-    mean_todest_time = round(all_todest_time.mean(), 3)
-    std_todest_time = round(all_todest_time.std(), 3)
-
     all_earnings = np.array([taxi.earnings for taxi in final_taxis])
-    mean_earnings = round(all_earnings.mean(), 3)
-    std_earnings = round(all_earnings.std(), 3)
 
-    passengerless_rate = sum(
-        [taxi.passengerless_time / taxi.driving_time for taxi in final_taxis]
-    ) / len(final_taxis)
-    todest_time_rate = sum(
-        [taxi.to_destination_time / taxi.driving_time for taxi in final_taxis]
-    ) / len(final_taxis)
-    earning_per_time = sum(
-        [taxi.earnings / taxi.driving_time for taxi in final_taxis]
-    ) / len(final_taxis)
-
-    if write_log:
-        logging.info(
-            f"Mean passengerless time: {mean_passengerless_time} (± {std_passengerless_time})"
-        )
-        logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
-        logging.info(
-            f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})"
-        )
-        logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
-        logging.info(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
-        logging.info(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
-        logging.info(f"Earnings per time: {round(earning_per_time, 3)} ₩")
-
-    print(
-        f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})"
-    )
-    print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
-    print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
-    print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
-    print(f"Passengerless rate: {round(passengerless_rate*100, 3)}%")
-    print(f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%")
-    print(f"Earnings per time: {round(earning_per_time, 3)} ₩")
-
-    # message is the same as the print message
-    message =   f"Date: {date}\n" + \
-                f"Distance rate: {distance_rate}\n" + \
-                f"Competition rate: {competition_rate}\n" + \
-                f"Demand rate: {demand_rate}\n" + \
-                f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
-                f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
-                f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
-                f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
-                f"Passengerless rate: {round(passengerless_rate*100, 3)}%\n" + \
-                f"Time heading to destination rate: {round(todest_time_rate*100, 3)}%\n" + \
-                f"Earnings per time: {round(earning_per_time, 3)} ₩"
+    results = {
+        "mean_passengerless_time": all_passengerless_time.mean(),
+        "std_passengerless_time": all_passengerless_time.std(),
+        "mean_waiting_time": all_waiting_time.mean(),
+        "std_waiting_time": all_waiting_time.std(),
+        "mean_todest_time": all_todest_time.mean(),
+        "std_todest_time": all_todest_time.std(),
+        "mean_earnings": all_earnings.mean(),
+        "std_earnings": all_earnings.std(),
+        "passengerless_rate": sum(
+            [taxi.passengerless_time / taxi.driving_time for taxi in final_taxis]
+        ) / len(final_taxis),
+        "todest_time_rate": sum(
+            [taxi.to_destination_time / taxi.driving_time for taxi in final_taxis]
+        ) / len(final_taxis),
+        "earning_per_time": sum(
+            [taxi.earnings / taxi.driving_time for taxi in final_taxis]
+        ) / len(final_taxis),
+    }
     
-    send_chat(webhookURL, message)
-
-    # write the result to result.csv which already exists
-    # There are 
-    # x_1,x_2,x_3,mean_watiting_time,mean_todest_time,mean_earnings,passengerless_rate,todest_time_rate,earning_per_time 
-    # are already written in the first row
-
-    with open(f"{result_path}/result.csv", "a") as f:
-        f.write(f"{distance_rate},{competition_rate},{demand_rate},{mean_waiting_time},{mean_todest_time},{mean_earnings},{round(passengerless_rate*100, 3)},{round(todest_time_rate*100, 3)},{round(earning_per_time, 3)},{weekend},{date}\n")
-
+    return results
         
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -609,12 +592,17 @@ if __name__ == "__main__":
         type=float,
         help="Demand rate for the simulation",
     ),
-
     parser.add_argument(
         "-w",
         "--weekend",
         type=int,
         help="Weekend flag",
+    )
+    parser.add_argument(
+        "-m",
+        "--mode",
+        choices=["simulation", "optimization"],
+        help="Execution mode",
     )
 
     args = parser.parse_args()
@@ -674,37 +662,112 @@ if __name__ == "__main__":
     test = pd.read_csv(test_file)
     test["datetime"] = pd.to_datetime(test["datetime"])
 
-    passenger_list = test.to_dict("records")
-    for i in range(len(passenger_list)):
-        passenger_list[i]["name"] = f"P{i}"
-    passenger_list = deque(passenger_list)
-    temp_time = test["datetime"].iloc[0]
-    global_last_updated_time = None
-    clusters = [
-        Cluster(kmeans.cluster_centers_[i][0], kmeans.cluster_centers_[i][1], i)
-        for i in remaining_clusters
-    ]
-    observer = Observer()
-
     all_rest_times = pd.read_csv(rest_file)
     all_rest_times["start"] = pd.to_datetime(all_rest_times["start"])
     all_rest_times["end"] = pd.to_datetime(all_rest_times["end"])
     all_rest_times["duration"] = pd.to_timedelta(all_rest_times["duration"])
 
-    taxi_names = all_rest_times["name"].unique()
-    for i, taxi_name in enumerate(taxi_names):
-        observer.add_taxi(
-            Taxi(
-                name=f"T{i}",
-                x_axis=(127.3 + 0.1 * random.random()),
-                y_axis=(36.3 + 0.1 * random.random()),
-                rest_times=all_rest_times[all_rest_times["name"] == taxi_name],
-            ),
-        )
+    if args.mode == "simulation":
 
-    # Run simulation with steps from command line argument
-    run_simulation(observer, steps)
-    if visualize:
-        subprocess.run(["streamlit", "run", "visualization.py"])
-        time.sleep(3)
-        webbrowser.open("http://localhost:8501")
+        # Run simulation with steps from command line argument
+        results = run_simulation()
+
+        mean_passengerless_time = round(results['mean_passengerless_time'], 3)
+        std_passengerless_time = round(results['std_passengerless_time'], 3)
+        mean_waiting_time = round(results['mean_waiting_time'], 3)
+        std_waiting_time = round(results['std_waiting_time'], 3)
+        mean_todest_time = round(results['mean_todest_time'], 3)
+        std_todest_time = round(results['std_todest_time'], 3)
+        mean_earnings = round(results['mean_earnings'], 3)
+        std_earnings = round(results['std_earnings'], 3)
+        passengerless_rate = round(100 * results['passengerless_rate'], 3)
+        todest_time_rate = round(100 * results['todest_time_rate'], 3)
+        earning_per_time = round(results['earning_per_time'], 3)
+
+        if write_log:
+            logging.info(
+                f"Mean passengerless time: {[mean_passengerless_time]} (± {std_passengerless_time})"
+            )
+            logging.info(f"Mean waiting time: {mean_waiting_time} (± {std_waiting_time})")
+            logging.info(
+                f"Mean time heading to passenger: {mean_todest_time} (± {std_todest_time})"
+            )
+            logging.info(f"Mean earnings: {mean_earnings} (± {std_earnings})")
+            logging.info(f"Passengerless rate: {passengerless_rate}%")
+            logging.info(f"Time heading to destination rate: {todest_time_rate}%")
+            logging.info(f"Earnings per time: {earning_per_time} ₩")
+
+        print(
+            f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})"
+        )
+        print(f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})")
+        print(f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})")
+        print(f"Mean earnings: {mean_earnings} (±{std_earnings})")
+        print(f"Passengerless rate: {passengerless_rate}%")
+        print(f"Time heading to destination rate: {todest_time_rate}%")
+        print(f"Earnings per time: {earning_per_time} ₩")
+
+        # message is the same as the print message
+        message =   f"Date: {date}\n" + \
+                    f"Distance rate: {distance_rate}\n" + \
+                    f"Competition rate: {competition_rate}\n" + \
+                    f"Demand rate: {demand_rate}\n" + \
+                    f"Mean passengerless time: {mean_passengerless_time} (±{std_passengerless_time})\n" + \
+                    f"Mean waiting time: {mean_waiting_time} (±{std_waiting_time})\n" + \
+                    f"Mean time heading to passenger: {mean_todest_time} (±{std_todest_time})\n" + \
+                    f"Mean earnings: {mean_earnings} (±{std_earnings})\n" + \
+                    f"Passengerless rate: {passengerless_rate}%\n" + \
+                    f"Time heading to destination rate: {todest_time_rate}%\n" + \
+                    f"Earnings per time: {earning_per_time} ₩"
+        
+        send_chat(webhookURL, message)
+
+        # write the result to result.csv which already exists
+        # There are 
+        # x_1,x_2,x_3,mean_watiting_time,mean_todest_time,mean_earnings,passengerless_rate,todest_time_rate,earning_per_time 
+        # are already written in the first row
+
+        with open(f"{result_path}/result.csv", "a") as f:
+            f.write(f"{distance_rate},{competition_rate},{demand_rate},{mean_waiting_time},{mean_todest_time},{mean_earnings},{passengerless_rate},{todest_time_rate},{earning_per_time},{weekend},{date}\n")
+
+        if visualize:
+            subprocess.run(["streamlit", "run", "visualization.py"])
+            time.sleep(3)
+            webbrowser.open("http://localhost:8501")
+
+    elif args.mode == "optimization":
+
+        def objective(trial):
+            global distance_rate, competition_rate, demand_rate
+
+            distance_rate = trial.suggest_float("distance_rate", 0.1, 0.9)
+            competition_rate = trial.suggest_float("competition_rate", 0.1, 0.9)
+            demand_rate = trial.suggest_float("demand_rate", 0.1, 0.9)
+
+            # Normalize rates to sum to 1
+            total = distance_rate + competition_rate + demand_rate
+            distance_rate /= total
+            competition_rate /= total
+            demand_rate /= total
+
+            results = run_simulation()
+
+            return results["mean_earnings"]  # Negative because we want to maximize
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=10)
+
+        print("Best trial:")
+        trial = study.best_trial
+
+        print("Value: ", -trial.value)
+        print("Params: ")
+        for key, value in trial.params.items():
+            print(f"    {key}: {value}")
+
+        # Normalize the best parameters
+        total = sum(trial.params.values())
+        normalized_params = {k: v / total for k, v in trial.params.items()}
+        print("Normalized Params:")
+        for key, value in normalized_params.items():
+            print(f"    {key}: {value}")
