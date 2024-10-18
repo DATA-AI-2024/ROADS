@@ -1,12 +1,19 @@
+from typing import Optional
 from flask import Flask, request
 from flask_socketio import Namespace, SocketIO, send, disconnect, emit
 from threading import Lock, Thread
 import time
+
 from main import predict
 import json
 from baecha import allocate_taxis
 from taxi import Taxi
 import numpy as np
+
+# Type aliases
+RawCoords = tuple[np.float64, np.float64]
+ClusterCoords = list[RawCoords]
+BaechaResult = tuple[list[tuple[Taxi, RawCoords, np.float64]], ClusterCoords]
 
 app = Flask(__name__)
 # app.config['SECRET_KEY'] = 'your_secret_key'
@@ -15,113 +22,176 @@ socketio = SocketIO(app,
                     ping_timeout=10,
                     cors_allowed_origins=[],
                     )
-clients = {}
-clientLock = Lock()
+taxis: dict[str, Taxi] = {}
+taxiLock = Lock()
 dashboards = {}
 dashboardLock = Lock()
-bg_thread_started = False
 
-baecha_callbacks = {}
+last_baecha_result: Optional[BaechaResult] = None
+
+
+# def get_taxi(id) -> Taxi:
+#     lat = taxis[id]['location']['lat']
+#     lng = taxis[id]['location']['lng']
+#     return Taxi(id=id, lat=lat, lng=lng)
+
+
+# def get_taxis() -> list[Taxi]:
+#     with taxiLock:
+#         val = [get_taxi(id) for id, client in taxis.items()]
+#    return val
 
 
 class ClientNamespace(Namespace):
     def on_connect(self):
-        with clientLock:
-            clients[request.sid] = {}
-            clients[request.sid]['state'] = 'WAITING'
-        print(f'Client {request.sid} connected.')
+        sid: str = request.sid  # type: ignore
+        print(f'Client {sid} connected.')
+        with taxiLock:
+            taxis[sid] = Taxi(id=sid)
+
+        if last_baecha_result:
+            notify_dashboard_baecha_result(
+                *last_baecha_result, dashboard_id=sid)
 
     def on_disconnect(self):
-        with clientLock:
-            clients.pop(request.sid, None)
-            baecha_callbacks.pop(request.sid, None)
-        print(f'Client {request.sid} disconnected.')
+        sid: str = request.sid  # type: ignore
+        print(f'Client {sid} disconnected.')
+        with taxiLock:
+            taxis.pop(sid, None)
 
     def on_update(self, data):
-        print(f'Client {request.sid} updated location: {data}')
-        clients[request.sid]['location'] = json.loads(data)
+        sid: str = request.sid  # type: ignore
+        print(f'Client {sid} updated location: {data}')
+        location = json.loads(data)
+        taxis[sid].lat = location['lat']
+        taxis[sid].lng = location['lng']
+
+    def on_request_baecha(self):
+        sid: str = request.sid  # type: ignore
+        taxis[sid].state = 'WAITING'
 
     def on_message(self, msg):
-        print(f'Received message from {request.sid}: {msg}')
+        sid: str = request.sid  # type: ignore
+        print(f'Received message from {sid}: {msg}')
 
     def on_state(self, state):
-        with clientLock:
-            if state not in ['WAITING', 'RUNNING']:
-                print(f'{request.sid} wrong state: {state}')
+        sid: str = request.sid  # type: ignore
+        with taxiLock:
+            if state not in ['IDLE', 'WAITING', 'RUNNING']:
+                print(f'{sid} wrong state: {state}')
                 return
-            clients[request.sid]['state'] = state
+            taxis[sid].state = state
 
     def on_pong(self):
-        print(f'Pong received from {request.sid}')
+        sid: str = request.sid  # type: ignore
+        print(f'Pong received from {sid}')
 
     def on_ping(self):
-        print(f'Ping received from {request.sid}')
+        sid: str = request.sid  # type: ignore
+        print(f'Ping received from {sid}')
 
 
 class DashboardNamespace(Namespace):
     def on_connect(self):
-        # 현재 배차 정보 보내기
+        sid: str = request.sid  # type: ignore
+        print(f'dashboard connected: {sid}')
         with dashboardLock:
-            dashboards[request.sid] = {}
-        print(f'dashboard connected: {request.sid}')
+            dashboards[sid] = {}
 
     def on_disconnect(self):
+        sid: str = request.sid  # type: ignore
+        print(f'dashboard disconnecte: {sid}')
         with dashboardLock:
-            dashboards.pop(request.sid, None)
-        print(f'dashboard disconnecte: {request.sid}')
+            dashboards.pop(sid, None)
 
     def on_request_baecha(self):
-        print(f'received baecha request from {request.sid}')
+        sid: str = request.sid  # type: ignore
+        print(f'received baecha request from {sid}')
+        run_baecha()
 
-        def map_taxis(e):
-            lat = clients[e]['location']['lat']
-            lng = clients[e]['location']['lng']
-            return Taxi(id=e, lat=lat, lng=lng)
 
-        def map_passengers(e):
-            lat, lng = e[2], e[1]
-            return (lat, lng)
-        
-        clusters = predict()
-        taxis = list(map(map_taxis, clients))
-        passengers = list(map(map_passengers, clusters))
+def run_baecha():
+    global last_baecha_result
 
-        results = allocate_taxis(taxis, passengers)
+    def map_clusters(e):
+        lat, lng = e[2], e[1]
+        return (lat, lng)
 
-        print('baecha results:')
-        print(results)
+    predicted = predict()
+    with taxiLock:
+        waiting_taxis = list(
+            filter(lambda x: x.state == 'WAITING', taxis.values()))
+        for taxi in waiting_taxis:
+            taxi.state = 'RUNNING'
+    clusters = list(map(map_clusters, predicted))
 
-        notify_dashboard_results(results, passengers)
-        for result in results:
-            taxi, passenger, distance = result
-            baecha(taxi, passenger)
-    
+    results = allocate_taxis(waiting_taxis, clusters)
 
-def notify_dashboard_results(results, passengers):
+    print('baecha results:')
+    print(results)
+
+    notify_dashboard_baecha_result(results, clusters)
+
+    last_baecha_result = (results, clusters)
+
+    for result in results:
+        taxi, cluster, distance = result
+        notify_taxi_baecha_result(taxi, cluster)
+
+
+def notify_dashboard_baecha_result(results: list[tuple[Taxi, RawCoords, np.float64]],
+                                   clusters: ClusterCoords,
+                                   dashboard_id=None):
     def map_results(e):
         return {
-            'taxi':{
-                'id':e[0].id,
-                'lat':e[0].lat,
-                'lng':e[0].lng,
+            'taxi': {
+                'id': e[0].id,
+                'lat': e[0].lat,
+                'lng': e[0].lng,
             },
-            'target':e[1],
-            'distance':e[2],
+            'target': e[1],
+            'distance': e[2],
         }
     data = {
         'results': list(map(map_results, results)),
-        'passengers': passengers
+        'clusters': clusters
     }
-    for dashboard in dashboards.keys():
-        socketio.emit('baecha', data, to=dashboard, namespace='/dashboard')
+
+    if dashboard_id:
+        socketio.emit('baecha', data, to=dashboard_id, namespace='/dashboard')
+    else:
+        with dashboardLock:
+            for dashboard in dashboards.keys():
+                socketio.emit('baecha', data, to=dashboard,
+                              namespace='/dashboard')
 
 
-def baecha(taxi: Taxi, passenger: tuple[np.float64, np.float64]):
-    lat, lng = passenger
-    # baecha_callbacks[taxi.id](passenger[0], passenger[1])
-    if taxi.id in clients:
-        socketio.emit('baecha', {"lat":lat, "lng":lng}, to=taxi.id, namespace='/client')
+def notify_taxi_baecha_result(taxi: Taxi, cluster: tuple[np.float64, np.float64]):
+    lat, lng = cluster
+    # baecha_callbacks[taxi.id](cluster[0], cluster[1])
+    with taxiLock:
+        if taxi.id in taxis:
+            socketio.emit('baecha', {"lat": lat, "lng": lng},
+                          to=taxi.id, namespace='/client')
 
+# 대시보드에 변경된 택시 위치 정보를 업데이트
+
+
+def notify_taxi_locations():
+    if not dashboards:
+        return
+
+    data = [{'id': taxi.id, 'lat': taxi.lat, 'lng': taxi.lng}
+            for taxi in taxis.values()]
+    with dashboardLock:
+        for dashboard in dashboards.keys():
+            socketio.emit('update', data, to=dashboard, namespace='/dashboard')
+
+
+def notify_taxi_locations_loop():
+    while True:
+        notify_taxi_locations()
+        time.sleep(0.5)
 
 
 socketio.on_namespace(ClientNamespace('/client'))
@@ -131,6 +201,7 @@ socketio.on_namespace(DashboardNamespace('/dashboard'))
 if __name__ == '__main__':
     # print(predict())
 
-    # Thread(name='background', target=background_loop).start()
+    Thread(name='notify_taxi_locations',
+           target=notify_taxi_locations_loop).start()
 
     socketio.run(app, debug=False, host='0.0.0.0', port=5980)
