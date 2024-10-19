@@ -1,13 +1,16 @@
 import configparser
 import pickle
 import json
-from typing import List, Dict
+from typing import Callable, List, Dict, Optional
 import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
 import requests
 import time
 import holidays
+
+
+clusters = []
 
 
 class Matrix:
@@ -317,10 +320,31 @@ def predict(temp_time = None):
 
     return result
 
+def update_prediction_matrix():
+    temp_time_str = time.strftime('%Y-%m-%d%H:%M:%S', time.localtime(time.time()))
+    temp_time_str = temp_time_str[:-2] + "00"
+    predictions = predict(temp_time_str)
 
-# def 
+    for cluster in clusters:
+        for pred in predictions:
+            if pred[0] == int(cluster.name):
+                cluster.predicted_demand = pred[1]
+                cluster.predicted_reasons = pred[2]
+
+
+initialize_callback: Optional[Callable] = None
+is_initialized = False
+
+def set_initialize_callback(callback: Callable):
+    global initialize_callback
+    if is_initialized:
+        callback()
+    else:
+        initialize_callback = callback
 
 def initialize(): 
+    global clusters
+
     config = configparser.ConfigParser()
     config.read('server.ini')
     weather_API= config["TRAIN"]["weather_api"]
@@ -352,11 +376,26 @@ def initialize():
     with open(f"{save_path}/{explainer_path}", "rb") as f:
         explainer = pickle.load(f)
 
-    return kmeans, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns
+    observer = Observer()
 
+    is_initialized = True
+    if initialize_callback: initialize_callback()
 
-assign_callback = None
-predict_callback = None
+    clusters = [
+        Cluster(kmeans.cluster_centers_[i][0], kmeans.cluster_centers_[i][1], i)
+        for i in remaining_clusters
+    ]
+
+    update_prediction_matrix()
+
+    return kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer
+
+def return_model_values():
+    return kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer
+    
+
+assign_callback: Optional[Callable] = None
+predict_callback: Optional[Callable] = None
 
 
 def set_assign_callback(callback):
@@ -368,30 +407,16 @@ def set_predict_callback(callback):
     global predict_callback
     predict_callback = callback
 
-kmeans, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns = initialize()
+kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer = initialize()
 
-clusters = [
-    Cluster(kmeans.cluster_centers_[i][0], kmeans.cluster_centers_[i][1], i)
-    for i in remaining_clusters
-
-]
-
-observer = Observer()
 
 taxis = []
 
-if clusters[0].last_updated_time is None:
-    temp_time_str = time.strftime('%Y-%m-%d%H:%M:%S', time.localtime(time.time()))
-    temp_time_str = temp_time_str[:-2] + "00"
-    predictions = predict(temp_time_str)
+# observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
+# assignments = observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
 
-    for cluster in clusters:
-        for pred in predictions:
-            if pred[0] == int(cluster.name):
-                cluster.predicted_demand = pred[1]
-                cluster.predicted_reasons = pred[2]
-
-
+if assign_callback is not None:
+    assign_callback()
 
 if predict_callback is not None:
     predict_callback()
