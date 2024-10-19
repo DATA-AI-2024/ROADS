@@ -201,6 +201,34 @@ class Observer:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
 
+        observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
+        observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+        if assign_callback is not None:
+            assign_callback()
+
+t = ['월', '화', '수', '목', '금', '토', '일']
+temp_time = time.localtime(time.time()).tm_wday
+weekday = t[temp_time]
+two_reasons= {('hour', 'weekday'): f"{weekday}요일 이 시간대에는 수요가 많아요.",
+              ('hour', 'holiday'): f"휴일 이 시간대에는 수요가 많아요.",
+            ('hour', 'sum_drinks'): f"이 시간대에 주점이 많아 수요가 많아요.",
+            ('hour', 'sum_hospitals'): f"이 시간대에 병원이 많아 수요가 많아요.",
+            ('hour', 'sum_hotels'): f"이 시간대에 숙박업소가 많아 수요가 많아요."
+            }
+two_reasons_order = [('hour', 'sum_drinks'), ('hour', 'sum_hospitals'), ('hour', 'sum_hotels'), ('hour', 'holiday'),('hour', 'weekday')]
+one_reasons = {('hour'): "이 시간대에 수요가 많아요.",
+               ('weekday'): f"{weekday}요일에 수요가 많아요.",
+                ('holiday'): "휴일이어서 수요가 많아요.",
+                ('sum_drinks'): "주점이 많아 수요가 많아요.",
+                ('sum_hospitals'): "병원이 많아 수요가 많아요.",
+                ('sum_hotels'): "숙박업소가 많아 수요가 많아요.",
+                ('day'): "이 날짜에 수요가 많아요.",
+                ('TEMP'): "이 날씨에 수요가 많아요.",
+                ('HUMI'): "습해서 수요가 많아요.",
+                ('WS'): "이 날씨에 수요가 많아요.",
+                ('RN'): "비가 와서 수요가 많아요."
+               }
+one_reasons_order = ['sum_drinks', 'sum_hospitals', 'sum_hotels', 'RN', 'TEMP', 'HUMI', 'WS', 'holiday', 'weekday', 'hour', 'day']
 
 def get_weather(year, month, day, hour):
     time_str = f'{year}{month}{day}{hour}{str(0).zfill(2)}'
@@ -269,7 +297,23 @@ def predict(temp_time = None):
         top_feature = train_columns[top_feature_index]
         # Get the name of the second top feature
         second_top_feature = train_columns[np.argsort(abs_shap_values)[-2]]
-        result.append((cluster, prediction, [top_feature, second_top_feature]))
+        third_top_feature = train_columns[np.argsort(abs_shap_values)[-3]]
+        reason = [top_feature, second_top_feature, third_top_feature]
+
+        reason_found = False
+
+        for key in two_reasons_order:
+            if not set(key) - set(reason):
+                reason = two_reasons[key]
+                reason_found = True
+                break
+
+        if not reason_found:
+            for key in one_reasons_order:
+                if key in set(reason):
+                    reason = one_reasons[key]
+                    break
+        result.append((cluster, prediction, reason))
 
     return result
 
@@ -347,11 +391,7 @@ if clusters[0].last_updated_time is None:
                 cluster.predicted_demand = pred[1]
                 cluster.predicted_reasons = pred[2]
 
-# observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
-# assignments = observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
 
-if assign_callback is not None:
-    assign_callback()
 
 if predict_callback is not None:
     predict_callback()
