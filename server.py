@@ -343,7 +343,7 @@ def set_initialize_callback(callback: Callable):
         initialize_callback = callback
 
 def initialize(): 
-    global clusters
+    global clusters, is_initialized
 
     config = configparser.ConfigParser()
     config.read('server.ini')
