@@ -115,6 +115,7 @@ class Observer:
         self.distance_matrix = None
         self.competition_matrix = None
         self.demand_matrix = None
+        self.assignments = None
 
     # Initialize matrices for optimal assignment
     def create_assignment_matrices(self, taxis, clusters):
@@ -182,7 +183,8 @@ class Observer:
             else:  # It's a dummy cluster, assign to the best real cluster
                 best_cluster_index = np.argmin(cost_matrix[i, :n_clusters])
                 assignments[taxis[i].name] = clusters[best_cluster_index]
-
+        
+        self.assignments = assignments
         return assignments
 
     def set_taxi(self, taxi: Taxi):
@@ -212,7 +214,6 @@ class Observer:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
 
-        print(taxis)
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
         observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
