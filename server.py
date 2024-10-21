@@ -343,7 +343,7 @@ def set_initialize_callback(callback: Callable):
         initialize_callback = callback
 
 def initialize(): 
-    global clusters, is_initialized
+    global kmeans, clusters, is_initialized, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer
 
     config = configparser.ConfigParser()
     config.read('server.ini')
