@@ -182,6 +182,7 @@ class Observer:
     def set_taxi(self, taxi: Taxi):
         if taxi.name not in self.available_taxis:
             self.available_taxis[taxi.name] = taxi.status
+            taxis.append(taxi)
 
         else:
             if self.available_taxis[taxi.name] == taxi.status:
@@ -191,6 +192,7 @@ class Observer:
                 del self.waiting_taxis[taxi.name]
             elif self.available_taxis[taxi.name] == "resting":
                 del self.resting_taxis[taxi.name]
+                taxis.remove(taxi)
             else:
                 del self.moving_taxis[taxi.name]
 
@@ -203,6 +205,8 @@ class Observer:
             else:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
+
+        print(taxis)
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
         observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
