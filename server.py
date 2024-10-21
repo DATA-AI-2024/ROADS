@@ -115,7 +115,7 @@ class Observer:
         self.distance_matrix = None
         self.competition_matrix = None
         self.demand_matrix = None
-        self.assignments = None
+        self.assignments = {}
 
     # Initialize matrices for optimal assignment
     def create_assignment_matrices(self, taxis, clusters):
