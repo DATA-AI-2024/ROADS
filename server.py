@@ -31,7 +31,7 @@ class Taxi:
         self.earnings = 0
 
 
-    def calculate_distance(self, cluster: Cluster) -> float:
+    def calculate_distance(self, cluster: 'Cluster') -> float:
         return math.sqrt(
             (cluster.x_axis - self.x_axis) ** 2 + (cluster.y_axis - self.y_axis) ** 2
         )
@@ -86,7 +86,7 @@ class Cluster:
         for pred in predictions:
             if pred[0] == int(self.name):
                 self.predicted_demand = pred[1]
-        self.predicted_reasons = pred[2]
+        self.predicted_reason = pred[2]
 
 
     def update_nearby_taxis(self, all_taxis: List[Taxi], max_distance: float):
@@ -104,7 +104,7 @@ class Cluster:
             self.competition = 0.0
 
     def return_info(self):
-        return {'id': self.name, 'lon': float(self.x_axis), 'lat': float(self.y_axis), 'predicted_demand': self.predicted_demand, 'predicted_reasons': self.predicted_reasons, 'competition': self.competition}
+        return {'id': self.name, 'lon': float(self.x_axis), 'lat': float(self.y_axis), 'predicted_demand': self.predicted_demand, 'predicted_reason': self.predicted_reason, 'competition': self.competition}
 
 class Observer:
     def __init__(self):
@@ -217,6 +217,7 @@ class Observer:
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
         observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+        del self.available_taxis[taxi.name]
         if assign_callback is not None:
             assign_callback()
 
@@ -340,7 +341,7 @@ def update_prediction_matrix():
         for pred in predictions:
             if pred[0] == int(cluster.name):
                 cluster.predicted_demand = pred[1]
-                cluster.predicted_reasons = pred[2]
+                cluster.predicted_reason = pred[2]
 
 
 initialize_callback: Optional[Callable] = None
@@ -423,8 +424,6 @@ kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distan
 
 taxis = []
 
-# observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
-# assignments = observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
 
 if predict_callback is not None:
     predict_callback()
