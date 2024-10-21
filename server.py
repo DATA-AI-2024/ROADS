@@ -193,6 +193,17 @@ class Observer:
             taxis.append(taxi)
 
         else:
+            if taxi.status == "disconnected":
+                if self.available_taxis[taxi.name] == "waiting":
+                    del self.waiting_taxis[taxi.name]
+                elif self.available_taxis[taxi.name] == "resting":
+                    del self.resting_taxis[taxi.name]
+                else:
+                    del self.moving_taxis[taxi.name]
+                del self.available_taxis[taxi.name]
+                taxis.remove(taxi)
+                return
+            
             if self.available_taxis[taxi.name] == taxi.status:
                 return
             
