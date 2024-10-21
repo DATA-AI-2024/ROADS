@@ -8,6 +8,7 @@ from scipy.optimize import linear_sum_assignment
 import requests
 import time
 import holidays
+import math
 
 
 clusters = []
@@ -29,6 +30,11 @@ class Taxi:
         self.status = status  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting"
         self.earnings = 0
 
+
+    def calculate_distance(self, cluster: Cluster) -> float:
+        return math.sqrt(
+            (cluster.x_axis - self.x_axis) ** 2 + (cluster.y_axis - self.y_axis) ** 2
+        )
 
     def safe_division(n, d, default=0):
         return n / d if d != 0 else default
