@@ -141,7 +141,7 @@ class Observer:
         )
 
     def optimal_cluster_assignment(
-        self, taxis, clusters, distance_matrix, competition_matrix, demand_matrix
+        self, taxi, taxis, clusters, distance_matrix, competition_matrix, demand_matrix
     ):
         # global distance_rate, competition_rate, demand_rate
         n_taxis = len(taxis)
@@ -184,7 +184,7 @@ class Observer:
                 best_cluster_index = np.argmin(cost_matrix[i, :n_clusters])
                 assignments[taxis[i].name] = clusters[best_cluster_index]
         
-        self.assignments = assignments
+        self.assignments[taxi.name] = assignments[taxi.name]
         return assignments
 
     def set_taxi(self, taxi: Taxi):
@@ -216,7 +216,7 @@ class Observer:
 
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
-        observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+        observer.optimal_cluster_assignment(taxi, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
         del self.available_taxis[taxi.name]
         if assign_callback is not None:
             assign_callback()
