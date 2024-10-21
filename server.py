@@ -415,8 +415,5 @@ taxis = []
 # observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
 # assignments = observer.optimal_cluster_assignment(taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
 
-if assign_callback is not None:
-    assign_callback()
-
 if predict_callback is not None:
     predict_callback()
