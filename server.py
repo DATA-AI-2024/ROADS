@@ -64,6 +64,10 @@ class Taxi:
             global_last_updated_time = temp_time
 
         return assignments[self.name]
+    
+    def set_location (self, x, y):
+        self.x_axis = x
+        self.y_axis = y
 
 
 class Cluster:
