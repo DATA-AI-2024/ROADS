@@ -197,7 +197,7 @@ class Observer:
         start_hour = time.localtime(time.time()).tm_hour
         if taxi.name not in self.available_taxis:
             self.available_taxis[taxi.name] = taxi.status
-            taxis.append(taxi)
+            taxis[taxi.name] = taxi
 
         else:
             if taxi.status == "disconnected":
@@ -208,7 +208,7 @@ class Observer:
                 else:
                     del self.moving_taxis[taxi.name]
                 del self.available_taxis[taxi.name]
-                taxis.remove(taxi)
+                del taxis[taxi.name]
                 return
             
             if self.available_taxis[taxi.name] == taxi.status:
@@ -218,7 +218,7 @@ class Observer:
                 del self.waiting_taxis[taxi.name]
             elif self.available_taxis[taxi.name] == "resting":
                 del self.resting_taxis[taxi.name]
-                taxis.remove(taxi)
+                del taxis[taxi.name]
             else:
                 del self.moving_taxis[taxi.name]
 
@@ -232,12 +232,13 @@ class Observer:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
         
+        taxi_list = list(taxis.items())
         if start_hour != time.localtime(time.time()).tm_hour:
             update_prediction_matrix()
         update_distance_matrix()
 
-        observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
-        observer.optimal_cluster_assignment(taxi, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+        observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxi_list, clusters)
+        observer.optimal_cluster_assignment(taxi_list, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
         del self.available_taxis[taxi.name]
         if assign_callback is not None:
             assign_callback()
@@ -457,7 +458,7 @@ def set_predict_callback(callback):
 kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer = initialize()
 
 
-taxis = []
+taxis = {}
 
 
 if predict_callback is not None:
