@@ -6,7 +6,7 @@ import time
 import json
 import numpy as np
 
-from server import Taxi as ModelTaxi, Cluster as ModelCluster, initialize, return_model_values, set_assign_callback, set_initialize_callback, set_predict_callback
+from server import Taxi as ModelTaxi, Cluster as ModelCluster, taxis as modelTaxis, initialize, return_model_values, set_assign_callback, set_initialize_callback, set_predict_callback
 
 # Model 관련 코드 시작
 
@@ -64,27 +64,28 @@ class ClientNamespace(Namespace):
         print(f'Client {sid} connected.')
         with taxiLock:
             taxis[sid] = Taxi(id=sid)
+        model['observer'].set_taxi(
+            ModelTaxi(name=sid, x_axis=0, y_axis=0, status='connected')
+        )
 
     def on_disconnect(self):
         sid: str = request.sid  # type: ignore
         print(f'Client {sid} disconnected.')
         with taxiLock:
             taxis.pop(sid, None)
+        print('now calling set_taxi')
         model['observer'].set_taxi(
-            ModelTaxi(
-                name=sid,
-                x_axis=0,
-                y_axis=0,
-                status='disconnected',
-            )
+            ModelTaxi(name=sid, x_axis=0, y_axis=0, status='disconnected')
         )
 
     def on_update(self, data):
         sid: str = request.sid  # type: ignore
         # print(f'Client {sid} updated location: {data}')
         location = json.loads(data)
-        taxis[sid].lat = location['lat']
-        taxis[sid].lng = location['lng']
+        lat, lng = location['lat'], location['lng']
+        taxis[sid].lat = lat
+        taxis[sid].lng = lng
+        modelTaxis[sid].set_location(lng, lat)
 
     def on_request_baecha(self):
         sid: str = request.sid  # type: ignore
@@ -235,7 +236,7 @@ def notify_dashboard_baecha_result(result: AssignmentResult,
         # with dashboardLock:
         for dashboard in dashboards.keys():
             socketio.emit('baecha', data, to=dashboard,
-                        namespace='/dashboard')
+                          namespace='/dashboard')
 
 
 # 서버에서 predict가 실행되어 클러스터 정보가 바뀌었을 때 대시보드에 알림
@@ -252,9 +253,9 @@ def notify_dashboard_predict_result(dashboard_id=None):
         # taxi_id가 taxis에 존재하는지에 대한 체크에 전반적으로 필요함.
 
         data['clusters'][cluster.name] = {
-            'coords':[cluster.y_axis, cluster.x_axis],
-            'demand':cluster.predicted_demand,
-            'reason':cluster.predicted_reason
+            'coords': [cluster.y_axis, cluster.x_axis],
+            'demand': cluster.predicted_demand,
+            'reason': cluster.predicted_reason
         }
 
     if dashboard_id:
@@ -263,7 +264,7 @@ def notify_dashboard_predict_result(dashboard_id=None):
         # with dashboardLock:
         for dashboard in dashboards.keys():
             socketio.emit('predict', data, to=dashboard,
-                            namespace='/dashboard')
+                          namespace='/dashboard')
 
 
 def notify_taxi_baecha_result(taxi: Taxi, cluster: tuple[np.float64, np.float64]):
