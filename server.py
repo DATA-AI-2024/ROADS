@@ -235,7 +235,7 @@ class Observer:
         taxi_list = list(taxis.values())
         if start_hour != time.localtime(time.time()).tm_hour:
             update_prediction_matrix()
-        update_distance_matrix()
+        update_distance_matrix(taxi_list)
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxi_list, clusters)
         observer.optimal_cluster_assignment(taxi_list, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
@@ -369,7 +369,7 @@ def update_prediction_matrix():
         predict_callback()
 
 
-def update_distance_matrix():
+def update_distance_matrix(taxis):
     for cluster in clusters:
         cluster.update_nearby_taxis(
             taxis, 0.1
