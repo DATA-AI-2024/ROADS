@@ -103,6 +103,11 @@ class Cluster:
         else:
             self.competition = 0.0
 
+    def calculate_distance(self, taxi: "Taxi") -> float:
+        return math.sqrt(
+            (self.x_axis - taxi.x_axis) ** 2 + (self.y_axis - taxi.y_axis) ** 2
+        )
+    
     def return_info(self):
         return {'id': self.name, 'lon': float(self.x_axis), 'lat': float(self.y_axis), 'predicted_demand': self.predicted_demand, 'predicted_reason': self.predicted_reason, 'competition': self.competition}
 
