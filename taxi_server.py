@@ -81,7 +81,7 @@ class ClientNamespace(Namespace):
 
     def on_update(self, data):
         sid: str = request.sid  # type: ignore
-        print(f'Client {sid} updated location: {data}')
+        # print(f'Client {sid} updated location: {data}')
         location = json.loads(data)
         taxis[sid].lat = location['lat']
         taxis[sid].lng = location['lng']
@@ -251,7 +251,11 @@ def notify_dashboard_predict_result(dashboard_id=None):
         # TODO: 연결 해제한 택시에 대한 배차가 됐을 때도 고려하여
         # taxi_id가 taxis에 존재하는지에 대한 체크에 전반적으로 필요함.
 
-        data['clusters'][cluster.name] = [cluster.y_axis, cluster.x_axis]
+        data['clusters'][cluster.name] = {
+            'coords':[cluster.y_axis, cluster.x_axis],
+            'demand':cluster.predicted_demand,
+            'reason':cluster.predicted_reason
+        }
 
     if dashboard_id:
         socketio.emit('predict', data, to=dashboard_id, namespace='/dashboard')
@@ -294,8 +298,8 @@ def notify_taxi_locations_loop():
 
 
 def on_assign():
-    print(model)
-    print()
+    # print(model)
+    print('assign done!!!')
     on_baecha_complete()
 
 
