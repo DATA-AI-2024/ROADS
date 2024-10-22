@@ -232,7 +232,7 @@ class Observer:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
         
-        taxi_list = list(taxis.items())
+        taxi_list = list(taxis.values())
         if start_hour != time.localtime(time.time()).tm_hour:
             update_prediction_matrix()
         update_distance_matrix()
