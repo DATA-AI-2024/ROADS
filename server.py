@@ -27,7 +27,7 @@ class Taxi:
         self.passengerless_time = 0
         self.to_passenger_time = 0
         self.to_destination_time = 0
-        self.status = status  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting"
+        self.status = status  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting", "disconnected"
         self.earnings = 0
 
 
@@ -116,6 +116,7 @@ class Observer:
         self.competition_matrix = None
         self.demand_matrix = None
         self.assignments = {}
+        self.updated = False
 
     # Initialize matrices for optimal assignment
     def create_assignment_matrices(self, taxis, clusters):
@@ -188,6 +189,8 @@ class Observer:
         return assignments
 
     def set_taxi(self, taxi: Taxi):
+        global updated
+        start_hour = time.localtime(time.time()).tm_hour
         if taxi.name not in self.available_taxis:
             self.available_taxis[taxi.name] = taxi.status
             taxis.append(taxi)
@@ -224,7 +227,11 @@ class Observer:
             else:
                 self.moving_taxis[taxi.name] = taxi
                 self.available_taxis[taxi.name] = taxi.status
-
+        
+        if not self.updated or start_hour != time.localtime(time.time()).tm_hour:
+            update_prediction_matrix()
+            self.updated = True
+        update_distance_matrix()
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxis, clusters)
         observer.optimal_cluster_assignment(taxi, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
@@ -353,6 +360,17 @@ def update_prediction_matrix():
             if pred[0] == int(cluster.name):
                 cluster.predicted_demand = pred[1]
                 cluster.predicted_reason = pred[2]
+    
+    if predict_callback is not None:
+        predict_callback()
+
+
+def update_distance_matrix():
+    for cluster in clusters:
+        cluster.update_nearby_taxis(
+            taxis, 0.1
+        )
+        cluster.update_competition()
 
 
 initialize_callback: Optional[Callable] = None
@@ -408,8 +426,6 @@ def initialize():
         Cluster(kmeans.cluster_centers_[i][0], kmeans.cluster_centers_[i][1], i)
         for i in remaining_clusters
     ]
-
-    update_prediction_matrix()
 
     return kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer
 
