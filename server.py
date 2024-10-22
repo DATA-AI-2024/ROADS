@@ -27,7 +27,7 @@ class Taxi:
         self.passengerless_time = 0
         self.to_passenger_time = 0
         self.to_destination_time = 0
-        self.status = status  # "waiting", "to_passenger", "to_destination", "to_cluster", "resting", "disconnected"
+        self.status = status  # "connected", "disconnceted", "idle", "to_cluster"
         self.earnings = 0
 
 
@@ -113,10 +113,6 @@ class Cluster:
 
 class Observer:
     def __init__(self):
-        self.moving_taxis: Dict[Taxi] = {}
-        self.waiting_taxis: Dict[Taxi] = {}
-        self.resting_taxis: Dict[Taxi] = {}
-        self.available_taxis: Dict[Taxi] = {}
         self.distance_matrix = None
         self.competition_matrix = None
         self.demand_matrix = None
@@ -195,53 +191,25 @@ class Observer:
     def set_taxi(self, taxi: Taxi):
         global updated
         start_hour = time.localtime(time.time()).tm_hour
-        if taxi.name not in self.available_taxis:
-            self.available_taxis[taxi.name] = taxi.status
+
+        if taxi.status == "connected":
             taxis[taxi.name] = taxi
-
-        else:
-            if taxi.status == "disconnected":
-                if self.available_taxis[taxi.name] == "waiting":
-                    del self.waiting_taxis[taxi.name]
-                elif self.available_taxis[taxi.name] == "resting":
-                    del self.resting_taxis[taxi.name]
-                else:
-                    del self.moving_taxis[taxi.name]
-                del self.available_taxis[taxi.name]
-                del taxis[taxi.name]
-                return
-            
-            if self.available_taxis[taxi.name] == taxi.status:
-                return
-            
-            if self.available_taxis[taxi.name] == "waiting":
-                del self.waiting_taxis[taxi.name]
-            elif self.available_taxis[taxi.name] == "resting":
-                del self.resting_taxis[taxi.name]
-                del taxis[taxi.name]
-            else:
-                del self.moving_taxis[taxi.name]
-
-            if taxi.status == "waiting":
-                self.waiting_taxis[taxi.name] = taxi
-                self.available_taxis[taxi.name] = taxi.status
-            elif taxi.status == "resting":
-                self.resting_taxis[taxi.name] = taxi
-                self.available_taxis[taxi.name] = taxi.status
-            else:
-                self.moving_taxis[taxi.name] = taxi
-                self.available_taxis[taxi.name] = taxi.status
         
-        taxi_list = list(taxis.values())
-        if start_hour != time.localtime(time.time()).tm_hour:
-            update_prediction_matrix()
-        update_distance_matrix(taxi_list)
+        elif taxi.status == "disconnected":
+            del taxis[taxi.name] 
+        
+        elif taxi.status == "to_cluster":
+            taxi_list = list(taxis.values())
+            if start_hour != time.localtime(time.time()).tm_hour:
+                update_prediction_matrix()
+            update_distance_matrix(taxi_list)
 
-        observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxi_list, clusters)
-        observer.optimal_cluster_assignment(taxi, taxi_list, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
-        del self.available_taxis[taxi.name]
-        if assign_callback is not None:
-            assign_callback()
+            observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxi_list, clusters)
+            observer.optimal_cluster_assignment(taxi, taxi_list, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+            
+            if assign_callback is not None:
+                assign_callback()
+        
 
 t = ['월', '화', '수', '목', '금', '토', '일']
 temp_time = time.localtime(time.time()).tm_wday
