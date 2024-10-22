@@ -450,6 +450,9 @@ def set_assign_callback(callback):
 def set_predict_callback(callback):
     global predict_callback
     predict_callback = callback
+    # 이미 predict가 이전에 실행되었으면 콜백을 바로 실행
+    if clusters[0].predicted_demand != 0.0:
+        callback()
 
 kmeans, clusters, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer = initialize()
 
