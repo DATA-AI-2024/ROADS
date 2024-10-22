@@ -54,21 +54,8 @@ taxiLock = Lock()
 dashboards = {}
 dashboardLock = Lock()
 
+last_predict_result: Optional[list[ModelCluster]] = None
 last_baecha_result: Optional[BaechaResult] = None
-
-
-def on_assign():
-    print(model)
-    print()
-    on_baecha_complete()
-
-
-set_assign_callback(on_assign)
-
-def on_predict():
-    print('predict done!!!')
-
-set_predict_callback(on_predict)
 
 
 class ClientNamespace(Namespace):
@@ -138,8 +125,11 @@ class DashboardNamespace(Namespace):
     def on_connect(self):
         sid: str = request.sid  # type: ignore
         print(f'dashboard connected: {sid}')
-        with dashboardLock:
-            dashboards[sid] = {}
+        # with dashboardLock:
+        dashboards[sid] = {}
+
+        if last_predict_result:
+            notify_dashboard_predict_result(dashboard_id=sid)
 
         # This was originally in ClientNamespace. Why?
         if last_baecha_result:
@@ -149,8 +139,8 @@ class DashboardNamespace(Namespace):
     def on_disconnect(self):
         sid: str = request.sid  # type: ignore
         print(f'dashboard disconnecte: {sid}')
-        with dashboardLock:
-            dashboards.pop(sid, None)
+        # with dashboardLock:
+        dashboards.pop(sid, None)
 
     # Not required anymore, model will continuously run in server.py
     def on_request_baecha(self):
@@ -181,7 +171,8 @@ class DashboardNamespace(Namespace):
 #     print(results)
 #     on_baecha(results, clusters)
 
-AssignmentResult = dict[str, ModelCluster]
+AssignmentResult = dict[str, ModelCluster]  # taxi id -> 배차된 클러스터 정보
+PredictResult = dict[str, ModelCluster]  # cluster id -> 해당 클러스터 정보
 
 
 def on_baecha_complete():
@@ -235,15 +226,40 @@ def notify_dashboard_baecha_result(result: AssignmentResult,
             'reason': cluster.predicted_reason
         })
 
-    data['clusters'] = {str(cluster.name): [cluster.y_axis, cluster.x_axis] for cluster in model['clusters']}
+    data['clusters'] = {str(cluster.name): [cluster.y_axis, cluster.x_axis]
+                        for cluster in model['clusters']}
 
     if dashboard_id:
         socketio.emit('baecha', data, to=dashboard_id, namespace='/dashboard')
     else:
-        with dashboardLock:
-            for dashboard in dashboards.keys():
-                socketio.emit('baecha', data, to=dashboard,
-                              namespace='/dashboard')
+        # with dashboardLock:
+        for dashboard in dashboards.keys():
+            socketio.emit('baecha', data, to=dashboard,
+                        namespace='/dashboard')
+
+
+# 서버에서 predict가 실행되어 클러스터 정보가 바뀌었을 때 대시보드에 알림
+# TODO: 추후 클러스터 경쟁률 정보 등도 알릴 필요 있으면 여기서 하기
+def notify_dashboard_predict_result(dashboard_id=None):
+    data = {
+        'clusters': {}
+    }
+
+    for cluster in model['clusters']:
+        cluster: ModelCluster
+
+        # TODO: 연결 해제한 택시에 대한 배차가 됐을 때도 고려하여
+        # taxi_id가 taxis에 존재하는지에 대한 체크에 전반적으로 필요함.
+
+        data['clusters'][cluster.name] = [cluster.y_axis, cluster.x_axis]
+
+    if dashboard_id:
+        socketio.emit('predict', data, to=dashboard_id, namespace='/dashboard')
+    else:
+        # with dashboardLock:
+        for dashboard in dashboards.keys():
+            socketio.emit('predict', data, to=dashboard,
+                            namespace='/dashboard')
 
 
 def notify_taxi_baecha_result(taxi: Taxi, cluster: tuple[np.float64, np.float64]):
@@ -263,15 +279,37 @@ def notify_taxi_locations():
 
     data = [{'id': taxi.id, 'lat': taxi.lat, 'lng': taxi.lng}
             for taxi in taxis.values()]
-    with dashboardLock:
-        for dashboard in dashboards.keys():
-            socketio.emit('update', data, to=dashboard, namespace='/dashboard')
+    # with dashboardLock:
+    for dashboard in dashboards.keys():
+        socketio.emit('update', data, to=dashboard, namespace='/dashboard')
 
 
 def notify_taxi_locations_loop():
     while True:
         notify_taxi_locations()
         time.sleep(0.5)
+
+
+# Set server callbacks
+
+
+def on_assign():
+    print(model)
+    print()
+    on_baecha_complete()
+
+
+set_assign_callback(on_assign)
+
+
+def on_predict():
+    global last_predict_result
+    print('predict done!!!')
+    last_predict_result = model['clusters']
+    notify_dashboard_predict_result()
+
+
+set_predict_callback(on_predict)
 
 
 socketio.on_namespace(ClientNamespace('/client'))
