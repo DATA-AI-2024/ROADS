@@ -238,7 +238,7 @@ class Observer:
         update_distance_matrix(taxi_list)
 
         observer.distance_matrix, observer.competition_matrix, observer.demand_matrix = observer.create_assignment_matrices(taxi_list, clusters)
-        observer.optimal_cluster_assignment(taxi_list, taxis, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
+        observer.optimal_cluster_assignment(taxi, taxi_list, clusters, observer.distance_matrix, observer.competition_matrix, observer.demand_matrix)
         del self.available_taxis[taxi.name]
         if assign_callback is not None:
             assign_callback()
