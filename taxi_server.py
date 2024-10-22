@@ -6,7 +6,7 @@ import time
 import json
 import numpy as np
 
-from server import Taxi as ModelTaxi, Cluster as ModelCluster, initialize, return_model_values, set_assign_callback, set_initialize_callback
+from server import Taxi as ModelTaxi, Cluster as ModelCluster, initialize, return_model_values, set_assign_callback, set_initialize_callback, set_predict_callback
 
 # Model 관련 코드 시작
 
@@ -65,6 +65,11 @@ def on_assign():
 
 set_assign_callback(on_assign)
 
+def on_predict():
+    print('predict done!!!')
+
+set_predict_callback(on_predict)
+
 
 class ClientNamespace(Namespace):
     def on_connect(self):
@@ -72,10 +77,6 @@ class ClientNamespace(Namespace):
         print(f'Client {sid} connected.')
         with taxiLock:
             taxis[sid] = Taxi(id=sid)
-
-        if last_baecha_result:
-            notify_dashboard_baecha_result(
-                last_baecha_result, dashboard_id=sid)
 
     def on_disconnect(self):
         sid: str = request.sid  # type: ignore
@@ -139,6 +140,11 @@ class DashboardNamespace(Namespace):
         print(f'dashboard connected: {sid}')
         with dashboardLock:
             dashboards[sid] = {}
+
+        # This was originally in ClientNamespace. Why?
+        if last_baecha_result:
+            notify_dashboard_baecha_result(
+                last_baecha_result, dashboard_id=sid)
 
     def on_disconnect(self):
         sid: str = request.sid  # type: ignore
