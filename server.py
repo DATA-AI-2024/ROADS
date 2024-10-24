@@ -318,7 +318,8 @@ cluster_names ={
     58: '복수동',
     3: '정림동',
     27: '유천1동',
-    11: '산내동'
+    11: '산내동',
+    94: '비래동',
 }
 
 def get_weather(year, month, day, hour):
