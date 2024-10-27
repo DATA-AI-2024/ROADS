@@ -446,7 +446,7 @@ def initialize():
     global kmeans, clusters, is_initialized, cluster_features, remaining_clusters, model, explainer, distance_rate, competition_rate, demand_rate, weather_API, train_columns, observer
 
     config = configparser.ConfigParser()
-    config.read('./scripts/server.ini')
+    config.read('../scripts/server.ini')
     weather_API= config["TRAIN"]["weather_api"]
     save_path = config["TRAIN"]["save_path"]
     float_columns = eval(config["TRAIN"]["float_columns"])
