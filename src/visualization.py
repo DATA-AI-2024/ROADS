@@ -7,15 +7,14 @@ import configparser
 
 # Load the config
 config = configparser.ConfigParser()
-config.read('./configs/config_simulation.ini')
+config.read('../scripts/config_simulation.ini')
 taxis = int(config['SIMULATION']['taxis'])
 steps = int(config['SIMULATION']['steps'])
 test_file = config['SIMULATION']['test_file']
 visualize = bool(config['SIMULATION']['visualize'])
 save_path = config['SIMULATION']['save_path']
-result_name = config['SIMULATION']['result_name']
 
-name = f'{result_name}_{taxis}_{steps}'
+name = f'simulation_{taxis}_{steps}'
 
 # Load the data
 @st.cache_data

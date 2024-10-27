@@ -18,7 +18,7 @@ import requests
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
-from main import predict
+from prediction import predict
 
 
 class Cluster:
@@ -88,7 +88,6 @@ class Taxi:
         # 휴식 시간을 (start, end) 튜플의 리스트로 변환
         self.rest_intervals = list(zip(rest_times["start"], rest_times["end"]))
         self._rest_time_index = 0
-
 
     def safe_division(n, d, default=0):
         return n / d if d != 0 else default
@@ -288,6 +287,24 @@ class Observer:
 
         return assignments
 
+    def naive_cluster_assignment(
+        self, taxis, clusters, distance_matrix, competition_matrix, demand_matrix
+    ):
+                # global distance_rate, competition_rate, demand_rate
+        n_taxis = len(taxis)
+        n_clusters = len(clusters)
+
+        # Normalize matrices
+        norm_demand = demand_matrix.matrix / np.max(demand_matrix.matrix)
+
+        # return the cluster with the highest demand
+        assignments = {}
+        for i in range(n_taxis):
+            best_cluster_index = np.argmax(norm_demand[i, :])
+            assignments[taxis[i].name] = clusters[best_cluster_index]
+        
+        return assignments
+
     def add_passenger(self, passenger: Passenger):
         self.waiting_passengers.append(passenger)
 
@@ -437,13 +454,22 @@ class Observer:
             )
 
         if self.waiting_taxis:
-            assignments = self.optimal_cluster_assignment(
-                self.available_taxis,
-                clusters,
-                self.distance_matrix,
-                self.competition_matrix,
-                self.demand_matrix,
-            )
+            if args.naive == "True":
+                assignments = self.naive_cluster_assignment(
+                    self.available_taxis,
+                    clusters,
+                    self.distance_matrix,
+                    self.competition_matrix,
+                    self.demand_matrix,
+                )
+            else:
+                assignments = self.optimal_cluster_assignment(
+                    self.available_taxis,
+                    clusters,
+                    self.distance_matrix,
+                    self.competition_matrix,
+                    self.demand_matrix,
+                )
 
         for taxi in self.waiting_taxis[:]:
             taxi.driving_time += 1
@@ -499,6 +525,7 @@ def run_simulation():
     observer = Observer()
 
     taxi_names = all_rest_times["name"].unique()
+
     for i, taxi_name in enumerate(taxi_names):
         observer.add_taxi(
             Taxi(
@@ -597,6 +624,11 @@ if __name__ == "__main__":
         choices=["simulation", "optimization"],
         help="Execution mode",
     )
+    parser.add_argument(
+        "-n",
+        "--naive",
+        help="Naive mode",
+    )
 
     args = parser.parse_args()
 
@@ -621,9 +653,8 @@ if __name__ == "__main__":
     write_csv = True if config["SIMULATION"]["write_csv"] == "True" else False
     write_log = True if config["SIMULATION"]["write_log"] == "True" else False
     visualize = True if config["SIMULATION"]["visualize"] == "True" else False
-    alg_name = config["SIMULATION"]["alg_name"]
     result_path = config["SIMULATION"]["save_path"]
-    name = f"{distance_rate}_{competition_rate}_{demand_rate}_{taxis}_{steps}"
+    name = f"{taxis}_{steps}"
     seed = int(config["GENERAL"]["seed"])
 
     random.seed(seed)
@@ -711,11 +742,6 @@ if __name__ == "__main__":
                     f"Passengerless rate: {passengerless_rate}%\n" + \
                     f"Time heading to destination rate: {todest_time_rate}%\n" + \
                     f"Earnings per time: {earning_per_time} ₩"
-        
-        # write the result to result.csv which already exists
-        # There are 
-        # x_1,x_2,x_3,mean_watiting_time,mean_todest_time,mean_earnings,passengerless_rate,todest_time_rate,earning_per_time 
-        # are already written in the first row
 
         with open(f"{result_path}/result.csv", "a") as f:
             f.write(f"{distance_rate},{competition_rate},{demand_rate},{mean_waiting_time},{mean_todest_time},{mean_earnings},{passengerless_rate},{todest_time_rate},{earning_per_time},{weekend},{date}\n")
@@ -745,19 +771,24 @@ if __name__ == "__main__":
             return results["mean_earnings"]  # Negative because we want to maximize
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=10)
+        if args.naive == "True":
+            print("Naive mode")
+            study.optimize(objective, n_trials=1)
+        else:
+            study.optimize(objective, n_trials=10)
 
         print("Best trial:")
         trial = study.best_trial
 
         print("Value: ", -trial.value)
-        print("Params: ")
-        for key, value in trial.params.items():
-            print(f"    {key}: {value}")
+        if args.naive != "True":
+            print("Params: ")
+            for key, value in trial.params.items():
+                print(f"    {key}: {value}")
 
-        # Normalize the best parameters
-        total = sum(trial.params.values())
-        normalized_params = {k: v / total for k, v in trial.params.items()}
-        print("Normalized Params:")
-        for key, value in normalized_params.items():
-            print(f"    {key}: {value}")
+            # Normalize the best parameters
+            total = sum(trial.params.values())
+            normalized_params = {k: v / total for k, v in trial.params.items()}
+            print("Normalized Params:")
+            for key, value in normalized_params.items():
+                print(f"    {key}: {value}")
