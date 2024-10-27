@@ -7,3 +7,5 @@ streamlit_folium == 0.22.1
 geopy == 2.4.1
 optuna == 4.0.0
 scikit-optimize == 0.10.2
+Flask==3.0.3
+Flask-SocketIO==5.4.1
