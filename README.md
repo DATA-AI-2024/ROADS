@@ -1,3 +1,8 @@
+# 실시간 수요 예측 기반 택시 배차 최적화 시스템
+택시 기사의 수익 증대를 위한 실시간 위치 추천-최적 배차 일원화 시스템, 앱 개발
+
+https://github.com/user-attachments/assets/0d66ae3f-7f37-43d3-a043-5dba202dcb4a
+
 # 모델 (server 디렉토리)
 
 ### 요구사항
